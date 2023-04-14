@@ -1,0 +1,11 @@
+# bundle title
+title: "WCH\nRoom Defects"
+
+# bundle author
+author: "Michael Warwick\nMAW Design"
+
+# bundle tooltip
+tooltip: Update defects status from Excel to Revit rooms
+
+engine:
+  clean: false
