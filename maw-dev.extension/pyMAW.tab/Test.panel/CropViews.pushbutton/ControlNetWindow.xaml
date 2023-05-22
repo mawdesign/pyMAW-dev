@@ -10,7 +10,10 @@
         Closing="window_closing">
 	<StackPanel>
 		<TextBlock Text="Hello" />
-		<Image x:Name="img" HorizontalAlignment="Left" Height="250" Margin="20,20,0,0" VerticalAlignment="Top" Width="512" Stretch="Fill" Source="{Binding ImageSource}"/>
+		<Image x:Name="img" 
+			HorizontalAlignment="Left" VerticalAlignment="Top" Stretch="Fill" 
+			Height="250" Width="512" Margin="20,20,0,0" 
+			Source="{Binding ImageSource}"/>
 		<Button Click="ok_button">
 			Ok
 		</Button>
