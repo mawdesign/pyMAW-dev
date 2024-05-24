@@ -1,37 +1,62 @@
-from pyrevit import forms, UI
-from pyrevit import EXEC_PARAMS
-from System import EventHandler, Uri
-from Autodesk.Revit.UI.Events import DialogBoxShowingEventArgs
+# -*- coding: utf-8 -*-
+import os.path as op
+from pyrevit import revit, DB
+from pyrevit import forms
 
-forms.alert("Loaded"+str(__revit__.DialogBoxShowing))
+fm = revit.doc.FamilyManager
+tcUnits = []
+tcPara = []
+tcTypes = []
+dump = ""
 
-def maw_dialog_open(sender, event):
-    forms.alert(str(event.DialogId))
-    # try:
-        # if event.DialogId == 'TaskDialog_Really_Print_Or_Export_Temp_View_Modes':
-            # event.OverrideResult(1002) 
-            # # 1001 call TaskDialogResult.CommandLink1
-            # # 1002 call TaskDialogResult.CommandLink2
-            # # int(TaskDialogResult.CommandLink2) to check the result
-    # except Exception as e:
-        # pass #print(e) # uncomment this to debug 
-        
-# __uiControlledApplication__.DialogBoxShowing += on_dialog_open
-# __revit__.DialogBoxShowing += maw_dialog_open
-__revit__.DialogBoxShowing += EventHandler[DialogBoxShowingEventArgs](maw_dialog_open)
+for fp in fm.GetParameters():
+    if fp.IsDeterminedByFormula == False:
+        pn = fp.Definition.Name
+        ut = fp.Definition.UnitType
+        u = revit.doc.GetUnits
+        u = DB.Units(DB.UnitSystem.Metric)
+        fo = u.GetFormatOptions(ut)
+        s1 = DB.UnitUtils.GetTypeCatalogString(ut)
+        s2 = DB.UnitUtils.GetTypeCatalogString(fo.DisplayUnits)
+        if s1 == "NUMBER" and s2 == "GENERAL":
+            s1 = "OTHER"
+            s2 = ""
+        tcUnits.append(pn + "##" + s1 + "##" + s2)
+        tcPara.append(fp)
 
-# from System import EventHandler, Uri
-# from Autodesk.Revit.UI.Events import ViewActivatedEventArgs, ViewActivatingEventArgs
+tcUnits.sort()
 
-# def event_handler_function(sender, args):
-   # do the even stuff here
+forms.alert(",".join(tcUnits))
 
-# I'm using ViewActivating event here as example.
-# The handler function will be executed every time a Revit view is activated:
-# __revit__.ViewActivating += EventHandler[ViewActivatingEventArgs](event_handler_function)
+for ft in fm.Types:
+    tcTypes.append(ft.Name)
 
-# def on_opened(sender, args):
-    # if doc.IsWorkshared:
-        # pass
+forms.alert(",".join(sorted(tcTypes)))
 
-# uiapp.Application.DocumentOpened += EventHandler[Events.DocumentOpenedEventArgs](on_opened)
+def FamilyParamValueString(ft, fp, doc):
+    val = ft.AsValueString(fp)
+    if fp.StorageType == DB.StorageType.String:
+        val = "'" + ft.AsString(fp) + "' (string)"
+    elif fp.StorageType == DB.StorageType.ElementId:
+        pid = ft.AsElementId(fp)
+        ele = doc.GetElement(pid)
+        fName = ele.Family.Name
+        eName = DB.Element.Name.__get__(ele)
+        val = str(pid) + " (" + fName + ":" + eName + ")"
+    elif fp.StorageType == DB.StorageType.Integer:
+        val = str(ft.AsInteger(fp)) + " (int)";
+    elif val is None and fp.StorageType == DB.StorageType.Double:
+        val = str(ft.AsDouble(fp)) + " (double)"
+    return val
+
+for ft in fm.Types:
+    name = ft.Name
+    dump += name + "\r\n"
+    for pn in tcPara:
+        fp = pn.Definition.Name
+        if ft.HasValue(pn):
+            val = FamilyParamValueString(ft, pn, revit.doc )
+            dump += ": " + fp + " = " + val + "\r\n"
+
+forms.alert(dump)
+
