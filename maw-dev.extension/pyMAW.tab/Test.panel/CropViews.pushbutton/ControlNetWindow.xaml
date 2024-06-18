@@ -1,0 +1,21 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        ShowInTaskbar="False"
+        Width="850" Height="750"
+        MinWidth="650" MinHeight="435"
+        ResizeMode="CanResizeWithGrip"
+        HorizontalContentAlignment="Center"
+        WindowStartupLocation="Manual"
+        Title="AI Render"
+        Closing="window_closing">
+	<StackPanel>
+		<TextBlock Text="Hello" />
+		<Image x:Name="img" 
+			HorizontalAlignment="Left" VerticalAlignment="Top" Stretch="Fill" 
+			Height="250" Width="512" Margin="20,20,0,0" 
+			Source="{Binding ImageSource}"/>
+		<Button Click="ok_button">
+			Ok
+		</Button>
+	</StackPanel>
+</Window>
