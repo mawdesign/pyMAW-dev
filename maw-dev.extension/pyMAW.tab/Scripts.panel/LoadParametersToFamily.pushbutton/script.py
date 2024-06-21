@@ -20,22 +20,34 @@ def familyHasParameter(currentParams, parameterName):
 
 # Set parameter according to type
 def setParam(param, value, f=revit.doc.FamilyManager):
-    try:
-        if param.StorageType == "Double":
-            value = float(value)
-        elif param.StorageType == "Integer":
-            value = int(value)
-        elif param.StorageType == "ElementID":
-            value = None
-        if not value is None:
-            f.Set(param, value)
-    except:
-        forms.alert(
-            "{} [{}] | {} [{}]".format(
-                param.Definition.Name, param.StorageType, value, type(value)
-            ),
-            "Error setting " + param.Definition.Name,
-        )
+    # Use Revit in-built unit conversion if data looks to be entered as number with units
+    if type(value) is str and re.match(r"^[-.0-9]+[^-.0-9]+", value):
+        try:
+            f.SetValueString(param, value)
+        except:
+            forms.alert(
+                "{} [{}]\n {} (value string) [{}]".format(
+                    param.Definition.Name, param.StorageType, value, type(value)
+                ),
+                "Error setting " + param.Definition.Name,
+            )
+    else:
+        try:
+            if param.StorageType == "Double":
+                value = float(value)
+            elif param.StorageType == "Integer":
+                value = int(value)
+            elif param.StorageType == "ElementID":
+                value = None
+            if not value is None:
+                f.Set(param, value)
+        except:
+            forms.alert(
+                "{} [{}]\n {} (value [{}]".format(
+                    param.Definition.Name, param.StorageType, value, type(value)
+                ),
+                "Error setting " + param.Definition.Name,
+            )
 
 
 def pathShortener(path, length=40):
@@ -45,6 +57,10 @@ def pathShortener(path, length=40):
         return re.sub(pattern, replacement, path)
     else:
         return path
+
+
+def xlFixUnicode(value, ctype):
+    return value.decode("utf-8") if ctype == 1 else value
 
 
 def main():
@@ -77,7 +93,7 @@ def main():
 
         # create ordered list to preserve order
         for r in worksheet.get_rows():
-            inParams.append([c.value for c in r])
+            inParams.append([xlFixUnicode(c.value, c.ctype) for c in r])
 
     if not len(inParams):
         forms.alert("Error opening {}".format(pathShortener(path)), "Error")
@@ -96,7 +112,7 @@ def main():
     headers = inParams.pop(0)  # get headers from first row
     newParams = []
     formulaParams = []
-    instanceParams = []
+    valueParams = []
     errorItems = []
 
     # get shared parameters
@@ -181,28 +197,20 @@ def main():
                         }
                     )
 
-                # Set Value
-                # immediately for type based, deferred for instance based
-                if (
-                    valueOverride and not newValue == ""
-                ) and not param.IsDeterminedByFormula:
-                    if param.IsInstance:
-                        instanceParams.append(
-                            [parameterName, param, newValue, valueOverride]
-                        )
-                    elif valueOverride or not fam.CurrentType.HasValue(param):
-                        setParam(param, newValue)
+                # Store Value to set for each type
+                if not newValue == "" and not param.IsDeterminedByFormula:
+                    valueParams.append([param, newValue, valueOverride])
 
                 newParams.append(param)
 
-        # Set Type values for instance parameters
+        # Set values for parameters
         familyTypesItor = fam.Types.ForwardIterator()
         familyTypesItor.Reset()
         while familyTypesItor.MoveNext():
             familyType = familyTypesItor.Current
             fam.CurrentType = familyType
-            for i in instanceParams:
-                parameterName, param, newValue, valueOverride = i[0], i[1], i[2], i[3]
+            for i in valueParams:
+                param, newValue, valueOverride = i[0], i[1], i[2]
                 if valueOverride or not familyType.HasValue(param):
                     setParam(param, newValue)
 
