@@ -13,8 +13,11 @@ import re
 # Test if family already contains the parameter
 def familyHasParameter(currentParams, parameterName):
     for k in range(len(currentParams)):
-        if currentParams[k].Definition.Name == parameterName:
-            return currentParams[k]
+        try:
+            if currentParams[k].Definition.Name == parameterName:
+                return currentParams[k]
+        except:
+            continue
     return False
 
 
@@ -49,6 +52,34 @@ def setParam(param, value, f=revit.doc.FamilyManager):
                 "Error setting " + param.Definition.Name,
             )
 
+def replaceParam(oldName, newName, param, sharedParams, paraGroup, isInstance, fam):
+    errorState = False
+    if param.IsShared and newName in sharedParams:
+        # Cannot direct replace shared with shared so have to first replace with a family parameter
+        #
+        # Replace a shared family parameter with a new non-shared family parameter.
+        # public FamilyParameter ReplaceParameter(
+        # 	FamilyParameter currentParameter,
+        # 	string parameterName,
+        # 	BuiltInParameterGroup parameterGroup,
+        # 	bool isInstance
+        # )
+        familyParameter = fam.ReplaceParameter(param, "x"+oldName, paraGroup, isInstance)
+    else:
+        familyParameter = param
+    # Replace a family parameter with a shared parameter.
+    # public FamilyParameter ReplaceParameter(
+    #   FamilyParameter currentParameter,
+    #   ExternalDefinition familyDefinition,
+    #   BuiltInParameterGroup parameterGroup,
+    #   bool isInstance
+    # )
+    try:
+        param = fam.ReplaceParameter(familyParameter, sharedParams[newName], paraGroup, isInstance)
+    except:
+        errorState = True
+        param = False
+    return param, errorState
 
 def pathShortener(path, length=40):
     pattern = r"^(\w+:\\)?([^\\]*\\).*(\\[^\\]*\\[^.]*[.].*)$"
@@ -60,7 +91,7 @@ def pathShortener(path, length=40):
 
 
 def xlFixUnicode(value, ctype):
-    return value.decode("utf-8") if ctype == 1 else value
+    return value #.decode("utf-8") if ctype == 1 else value
 
 
 def main():
@@ -133,7 +164,7 @@ def main():
             parameterName = p[headers.index("Parameter")]
             paraType = (
                 p[headers.index("Type")]
-                if p[headers.index("Type")] in ["SHARED", "SORT"]
+                if p[headers.index("Type")] in ["SHARED", "SORT", "RENAME", "REPLACE"]
                 else DB.ParameterType.Parse(DB.ParameterType, p[headers.index("Type")])
             )
             paraGroup = DB.BuiltInParameterGroup.Parse(
@@ -147,11 +178,31 @@ def main():
             formulaOverride = p[headers.index("FormulaOverride")]
             newValue = p[headers.index("Value")]
             valueOverride = p[headers.index("ValueOverride")]
+            oldName = p[headers.index("OldName")]
 
             isNew = False
             param = False
             if parameterName in currentParamNames:
                 param = familyHasParameter(currentParams, parameterName)
+            elif oldName and oldName in currentParamNames:
+                param = familyHasParameter(currentParams, oldName)
+                if param and paraType == "REPLACE":
+                    param, errorState = replaceParam(oldName, parameterName, param, sharedParams, paraGroup, isInstance, fam)
+                    if param.Definition.Name == oldName or errorState:
+                        errorItems.append("ERROR: couldn't replace '{}' with '{}'".format(oldName, parameterName))
+                        errorItems.append("Parameter is instance: " + str(param.IsInstance))
+                        errorItems.append("Excel is instance: " + str(isInstance))
+                        param = False
+                elif param and paraType == "RENAME":
+                    # Rename a family parameter.
+                    # public void RenameParameter(
+                    # 	FamilyParameter familyParameter,
+                    # 	string name
+                    # )
+                    fam.RenameParameter(param, parameterName)
+                    if param.Definition.Name == oldName:
+                        errorItems.append("ERROR: couldn't rename '{}' to '{}'".format(oldName, parameterName))
+                        param = False
             if not param:
                 isNew = True
                 formulaOverride = True
@@ -173,7 +224,7 @@ def main():
                                 parameterName
                             )
                         )
-                elif paraType != "SORT":
+                elif paraType not in ["SORT", "REPLACE", "RENAME"]:
                     # public FamilyParameter AddParameter(
                     # 	string parameterName,
                     # 	BuiltInParameterGroup parameterGroup,
@@ -191,6 +242,7 @@ def main():
                     formulaParams.append(
                         {
                             "parameter": param,
+                            "name": parameterName,
                             "formula": formula,
                             "dependents": depends,
                             "formulaOverride": formulaOverride,
@@ -228,16 +280,31 @@ def main():
                 if not familyHasParameter(updatedParams, d):
                     hasDepends = False
             if hasDepends:
-                fam.SetFormula(fx["parameter"], str(fx["formula"]))
-
-        # Sort parameters according to excel order
-        fam.ReorderParameters(
-            [x for x in currentParams if x not in newParams] + newParams
-        )
+                try:
+                    fam.SetFormula(fx["parameter"], str(fx["formula"]))
+                except:
+                    errorItems.append("ERROR: couldn't set formula for '{}'".format(fx["name"]))
 
     # Report errors
     if len(errorItems) > 0:
         forms.alert("\n".join(errorItems), "errors")
+
+    # Sort Parameters
+    with Transaction("Sort {} parameters".format(categoryName)) as rvtxn:
+        # Sort parameters according to excel order
+        updatedParams = fam.GetParameters()
+        orderedParams = []
+        for p in inParams:
+            parameterName = p[headers.index("Parameter")]
+            param = familyHasParameter(updatedParams, parameterName)
+            if param:
+                orderedParams.append(param)
+        try:
+            fam.ReorderParameters(
+                orderedParams + [x for x in updatedParams if x not in orderedParams]
+            )
+        except:
+            forms.alert("{}".format("\n- ".join([x.Definition.Name for x in updatedParams if x not in orderedParams])))
 
 
 if EXEC_PARAMS.config_mode:
