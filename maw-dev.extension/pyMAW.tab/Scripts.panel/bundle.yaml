@@ -1,4 +1,5 @@
 layout:
+    - PasteImage[title:Paste Image\nfrom Clipboard]
     - Room Defects[title:Room\nDefects]
     - LoadFamilesFromViews[title:Load Families\nfrom Views]
     - LoadParametersToFamily[title:Load Parameters\nto Family]
