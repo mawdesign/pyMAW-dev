@@ -113,7 +113,7 @@ def main():
         book = xlrd.open_workbook(path)
         sheet_name = (
             sheet_name
-            if sheet_name
+            if sheet_name in book.sheet_names()
             else forms.SelectFromList.show(
                 book.sheet_names(),
                 button_name="Select sheet",
@@ -158,6 +158,8 @@ def main():
     with Transaction("Update {} parameters".format(categoryName)) as rvtxn:
 
         for p in inParams:
+            if not p[headers.index("Parameter")]:
+                continue
             if categoryName == "Doors" and "CurtainWallDoors" in headers:
                 if isCurtain and not p[headers.index("CurtainWallDoors")]:
                     continue

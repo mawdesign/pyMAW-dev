@@ -7,7 +7,10 @@ from pyrevit.framework import List
 # from pyrevit import script
 # from rpws import RevitServer
 # import os
-
+"""
+Import from another open document into current document all detail and annotation familes
+from specific sheets or views.
+"""
 
 ## Implementation of family load options - always override existing family
 class FamilyLoadOptions(DB.IFamilyLoadOptions):
@@ -75,12 +78,15 @@ for v in views:
                         and f.Name in currdoc_families_names: # filter out new families
                     view_element_ids.append(f.Id)
                     view_elements.append(f)
+                elif f.Name not in currdoc_families_names:
+                    print("Skipping {} ({})".format(f.Name, f.Id))
             except Exception as err:
                 continue
 
 
 # Open each family and load into current, override parameters
 for f in view_elements:
+    print("Loading {} ({})".format(f.Name, f.Id))
     source_family = sourcedoc.EditFamily(f)
     reloaded_family = source_family.LoadFamily(currdoc, FamilyLoadOptions())
     source_family.Close(False)

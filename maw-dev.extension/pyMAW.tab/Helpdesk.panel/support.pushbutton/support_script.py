@@ -15,6 +15,7 @@ import platform
 import datetime
 import subprocess
 import multiprocessing
+import urllib
 from pyrevit import HOST_APP, DB, revit, script, forms
 from support_config import SupportConfig
 import os, wpf, clr
@@ -93,6 +94,13 @@ def send_email(email_address, subject_line, email_body):
     mailto_link = create_mailto_link(email_address, subject_line, email_body)
     os.startfile(mailto_link)
 
+def open_url():
+    url_address = "support.warrenandmahoney.com/support/tickets/new"
+    subject = urllib.quote("Revit ")
+    description = build_url_description()
+    url_link = create_url_link(url_address, subject, description)
+    os.startfile(url_link)
+
 def create_subject_line(tags, subject_line):
     """Creates the subject line for the email.
     Returns:
@@ -112,6 +120,17 @@ def create_mailto_link(email, subject, body):
     str: The mailto link."""
     mailto_link = "mailto:" + email + "?subject=" + subject + "&body=" + body
     return mailto_link
+
+def create_url_link(url_address, subject, description):
+    """Creates a url link.
+    Args:
+    url_address (str): The url address.
+    subject (str): The ticket subject.
+    body (str): The ticket body.
+    Returns:
+    str: The url link."""
+    url_link = "https://" + url_address + "?subject=" + subject + "&description=" + description
+    return url_link
 
 def get_issue_description(body):
     """Gets the issue description from the user.
@@ -432,8 +451,51 @@ GPU Information
     )
     return email_body
 
+def build_url_description():
+    """Builds the email body.
+    Returns:
+    str: The email body."""
+    document_info = collect_document_info()
+    system_info = collect_system_info()
+    description = """.
+
+<small><small><hr/><u><b>Revit Document Information</b></u>
+Project Number: {}
+Document Name: {}
+Document Path: {}
+Active View: {}
+<hr/><u><b>System Information</b></u>
+Revit Version: {}
+Operating System: {}
+Computer Name: {}
+Username: {}
+CPU Brand: {}
+CPU Threads: {}
+Total Memory: {}
+Memory Usage: {}
+<hr/><u><b>GPU Information</b></u>
+{}</small></small>
+""".format(
+        get_project_info_number(),
+        document_info['Document Name'],
+        document_info['Document Path'],
+        document_info['Active View'],
+        system_info['Revit Version'],
+        system_info['Operating System'],
+        system_info['Computer Name'],
+        system_info['Username'],
+        system_info['CPU Brand'],
+        system_info['CPU Cores'],
+        system_info['Total Memory'],
+        system_info['Memory Usage'],
+        tabulate_gpu_info(collect_gpu_info())
+    )
+    return urllib.quote(description.replace("\n","<br/>"))
+
+
 if __name__ == "__main__":
-    UI = SupportForm()
+    open_url()
+    # UI = SupportForm()
 
 
 
