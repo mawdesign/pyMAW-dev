@@ -1,354 +1,138 @@
-# -*- coding: utf-8 -*-
+#-*- coding: utf-8 -*-
 """
-Normal and Bump Map Generator for Corrugated and Trapezoidal Profiles (IronPython).
+This script finds a specific button in the Revit ribbon using AdWindows
+and saves its large (32x32) and standard (16x16) icons to the user's Desktop.
 
-This script is compatible with pyRevit's IronPython 2.7 environment.
-It uses rpw FlexForm for user input and the .NET System.Drawing library
-for image generation, removing the need for NumPy and Pillow. It can also
-create a corresponding Revit Model Fill Pattern.
-
-It calculates the required image size to ensure a tileable texture
-that represents a real-world area of at least 300mm with at least 3 repeats.
-Finally, it prompts the user to save the file(s) and displays the
-real-world dimensions for use in Revit's material editor.
+UPDATED: Includes robust, case-insensitive text comparison that ignores all
+whitespace and newlines. It also recursively searches inside container
+buttons (like Split Buttons or Drop-downs).
 """
 
-# Required Imports
-import sys
-import os
-from math import pi, cos, sin, ceil, sqrt
-
-# .NET Imports for Image Generation
 import clr
-clr.AddReference('System.Drawing')
-from System.Drawing import Bitmap, Color
-from System.Drawing.Imaging import ImageFormat
-
+import os
+import re
 from pyrevit import forms
-from rpw import revit, db, ui
-from rpw.ui.forms import (FlexForm, Label, ComboBox, TextBox, Separator,
-                          Button, CheckBox)
+
+# Add .NET assembly references
+clr.AddReference("AdWindows")
+import Autodesk.Windows as adWin
+
+clr.AddReference("PresentationCore")
+import System.Windows.Media.Imaging as imaging
+import System.IO as io
+from System import Environment
 
 
-def validate_trapezoid_inputs(values):
-    """Validates that trapezoid dimensions are geometrically possible."""
-    try:
-        rib_width = float(values['trap_rib_width'])
-        top_width = float(values['trap_top_width'])
-        spacing = float(values['trap_spacing'])
-
-        if (rib_width + top_width) >= spacing:
-            ui.forms.Alert(
-                "Invalid Dimensions",
-                header="The sum of 'Rib Width' and 'Top Width' must be less than the 'Rib Spacing'.",
-                exit=True
-            )
-        return True
-    except (ValueError, TypeError):
-        ui.forms.Alert("Invalid Input", header="Please enter valid numbers for all dimensions.", exit=True)
-        return False
-
-
-def calculate_dimensions(rib_spacing_mm):
+def normalize_string(text):
     """
-    Calculates the real-world size and number of repeats for the texture.
-    Ensures the texture is at least 300mm wide and has at least 3 repeats.
+    Removes all whitespace (spaces, tabs, newlines) and converts to lowercase.
+    This allows for a flexible comparison. e.g., "Wall\r\nFace" becomes "wallface".
     """
-    width_for_3_repeats = rib_spacing_mm * 3.0
-    target_real_world_width = max(300.0, width_for_3_repeats)
-    num_repeats = int(ceil(target_real_world_width / rib_spacing_mm))
-    final_real_world_width = num_repeats * rib_spacing_mm
-    return final_real_world_width, num_repeats
+    if not isinstance(text, str):
+        return ""
+    # re.sub(r'\s+', '', text) replaces one or more whitespace characters with nothing
+    return re.sub(r'\s+', '', text).lower()
 
 
-def generate_color_row(pixel_count, generation_func):
+def find_item_recursively(items_collection, normalized_button_name):
     """
-    Generates a single row of pixel colors by calling a generation function
-    for each pixel.
+    Recursively searches a collection of ribbon items to find a button by its
+    normalized text property.
     """
-    color_row = []
-    for i in range(pixel_count):
-        color_components = generation_func(i, pixel_count)
-        color_row.append(Color.FromArgb(*color_components))
-    return color_row
+    for item in items_collection:
+        # Check if the item has text and if its normalized text matches
+        if hasattr(item, 'Text'):
+            item_text_normalized = normalize_string(item.Text)
+            if item_text_normalized == normalized_button_name:
+                return item
 
-
-def create_bitmap_from_row(image_size, color_row):
-    """Creates a .NET Bitmap by tiling a single row of colors."""
-    bitmap = Bitmap(image_size, image_size)
-    for y in range(image_size):
-        for x in range(image_size):
-            bitmap.SetPixel(x, y, color_row[x])
-    return bitmap
-
-
-def create_revit_fill_pattern(doc, pattern_name, spacing_mm):
-    """Creates a Revit model fill pattern with parallel lines."""
-    # Check if a model pattern with this name already exists
-    # existing = db.FillPatternElement.GetFillPatternElementByName(doc, db.FillPatternTarget.Model, pattern_name)
-    # if existing:
-        # return False, "already exists"
-
-    # Convert spacing from millimeters to Revit's internal units (feet)
-    spacing_feet = spacing_mm / 304.8
-
-    try:
-        # Create the fill pattern definition
-        fill_pattern = db.FillPattern(pattern_name, db.FillPatternTarget.Model, db.FillPatternHostOrientation.ToHost)
-
-        # Create a grid of parallel vertical lines
-        fill_grid = db.FillGrid()
-        fill_grid.Angle = pi / 2  # Vertical lines
-        fill_grid.Origin = db.UV(0, 0)
-        fill_grid.Offset = spacing_feet # Distance between lines
-        fill_grid.Shift = 0
-        # An empty segments list creates solid lines
-        fill_grid.SetSegments([])
-
-        fill_pattern.SetFillGrids([fill_grid])
-
-        # Create the fill pattern element inside a transaction
-        with db.Transaction('Create Fill Pattern: ' + pattern_name):
-            db.FillPatternElement.Create(doc, fill_pattern)
+        if hasattr(item, 'Name'):
+            item_text_normalized = normalize_string(item.Name)
+            if item_text_normalized == normalized_button_name:
+                return item
         
-        return True, "created successfully"
-    except Exception as e:
-        return False, str(e)
-
-# --- Normal Map Vector Functions ---
-
-def get_corrugated_vector_func(spacing_mm, height_mm, num_repeats):
-    """Returns a function that calculates the normal vector for a corrugated profile."""
-    amplitude = height_mm / 2.0
-    
-    def get_vector_color(index, total_pixels):
-        x = num_repeats * (float(index) / total_pixels)
-        dz_dx = (2 * pi * amplitude / spacing_mm) * cos(2 * pi * x)
-        
-        magnitude = sqrt(dz_dx**2 + 1)
-        nx = -dz_dx / magnitude
-        ny = 0.0
-        nz = 1 / magnitude
-        
-        r = int((nx * 0.5 + 0.5) * 255)
-        g = int((ny * 0.5 + 0.5) * 255)
-        b = int((nz * 0.5 + 0.5) * 255)
-        return r, g, b
-        
-    return get_vector_color
-
-
-def get_trapezoidal_vector_func(rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats):
-    """Returns a function that calculates the normal vector for a trapezoidal profile."""
-    slope_width = (spacing_mm - rib_width_mm - top_width_mm) / 2.0
-    p1 = rib_width_mm
-    p2 = p1 + slope_width
-    p3 = p2 + top_width_mm
-    slope = height_mm / slope_width if slope_width > 0 else 0
-    total_width_mm = spacing_mm * num_repeats
-
-    def get_vector_color(index, total_pixels):
-        x_mm = total_width_mm * (float(index) / total_pixels)
-        x_mod = x_mm % spacing_mm
-
-        dz_dx = 0
-        if p1 <= x_mod < p2:
-            dz_dx = slope
-        elif p3 <= x_mod:
-            dz_dx = -slope
-
-        magnitude = sqrt(dz_dx**2 + 1)
-        nx = -dz_dx / magnitude
-        ny = 0.0
-        nz = 1 / magnitude
-
-        r = int((nx * 0.5 + 0.5) * 255)
-        g = int((ny * 0.5 + 0.5) * 255)
-        b = int((nz * 0.5 + 0.5) * 255)
-        return r, g, b
-        
-    return get_vector_color
-
-# --- Bump Map Height Functions ---
-
-def get_corrugated_height_func(height_mm, num_repeats):
-    """Returns a function that calculates the height for a corrugated profile."""
-    amplitude = height_mm / 2.0
-
-    def get_height_color(index, total_pixels):
-        x = num_repeats * (float(index) / total_pixels)
-        # Shift sine wave to be in range [0, height_mm]
-        height = amplitude * sin(2 * pi * x) + amplitude
-        # Normalize to grayscale value
-        gray = int((height / height_mm) * 255)
-        return gray, gray, gray
-
-    return get_height_color
-
-
-def get_trapezoidal_height_func(rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats):
-    """Returns a function that calculates the height for a trapezoidal profile."""
-    slope_width = (spacing_mm - rib_width_mm - top_width_mm) / 2.0
-    p1 = rib_width_mm
-    p2 = p1 + slope_width
-    p3 = p2 + top_width_mm
-    slope = height_mm / slope_width if slope_width > 0 else 0
-    total_width_mm = spacing_mm * num_repeats
-
-    def get_height_color(index, total_pixels):
-        x_mm = total_width_mm * (float(index) / total_pixels)
-        x_mod = x_mm % spacing_mm
-        
-        height = 0.0
-        if p1 <= x_mod < p2:
-            height = slope * (x_mod - p1)
-        elif p2 <= x_mod < p3:
-            height = height_mm
-        elif p3 <= x_mod:
-            height = height_mm - slope * (x_mod - p3)
-        
-        gray = int((height / height_mm) * 255)
-        return gray, gray, gray
-    
-    return get_height_color
-
-
-def show_ui_and_generate():
-    """Defines and shows the FlexForm UI, then triggers generation."""
-    components = [
-        Label('Select Roofing Profile and Dimensions (in mm)'),
-        ComboBox('profile_type', {'Corrugated': 'Corrugated', 'Trapezoidal': 'Trapezoidal'}),
-        Separator(),
-        Label('CORRUGATED PROFILE SETTINGS:'),
-        Label('Rib Spacing:'),
-        TextBox('corr_spacing', Text="76", default="76"),
-        Label('Rib Height:'),
-        TextBox('corr_height', Text="20", default="20"),
-        Separator(),
-        Label('TRAPEZOIDAL PROFILE SETTINGS:'),
-        Label('Rib Width (Bottom):'),
-        TextBox('trap_rib_width', Text="70", default="70"),
-        Label('Top Width:'),
-        TextBox('trap_top_width', Text="20", default="20"),
-        Label('Rib Spacing:'),
-        TextBox('trap_spacing', Text="130", default="130"),
-        Label('Profile Height:'),
-        TextBox('trap_height', Text="40", default="40"),
-        Separator(),
-        Label('SELECT OUTPUTS:'),
-        CheckBox('gen_normal', 'Generate Normal Map', default=True),
-        CheckBox('gen_bump', 'Generate Bump Map', default=True),
-        CheckBox('gen_pattern', 'Create Revit Model Fill Pattern', default=False),
-        Separator(),
-        Button('Generate')
-    ]
-    form = FlexForm('Map Generator', components)
-    form.show()
-
-    if not form.values:
-        return
-
-    values = form.values
-    if not values['gen_normal'] and not values['gen_bump'] and not values['gen_pattern']:
-        forms.alert("No outputs selected. Nothing to generate.", title="Action Cancelled")
-        return
-
-    profile_type = values['profile_type']
-    image_size = 1024
-    default_filename = ""
-    pattern_name = ""
-    spacing = 0.0
-    
-    try:
-        if profile_type == 'Corrugated':
-            spacing = float(values['corr_spacing'])
-            height = float(values['corr_height'])
-            default_filename = "Corrugate-{}x{}_normal.png".format(int(spacing), int(height))
-            pattern_name = "Corrugate {}x{}".format(int(spacing), int(height))
+        # If the item is a container (has an 'Items' property), search inside it
+        if hasattr(item, 'Items') and item.Items:
             
-            real_world_dim, repeats = calculate_dimensions(spacing)
-            normal_vector_func = get_corrugated_vector_func(spacing, height, repeats)
-            bump_height_func = get_corrugated_height_func(height, repeats)
-            
-        elif profile_type == 'Trapezoidal':
-            validate_trapezoid_inputs(values)
-            rib_width = float(values['trap_rib_width'])
-            top_width = float(values['trap_top_width'])
-            spacing = float(values['trap_spacing'])
-            height = float(values['trap_height'])
-            default_filename = "Trapezoidal-{}x{}@{}_normal.png".format(int(rib_width), int(height), int(spacing))
-            pattern_name = "Trapezoidal {}x{}@{}".format(int(rib_width), int(height), int(spacing))
+            found_item = find_item_recursively(item.Items, normalized_button_name)
+            if found_item:
+                return found_item
+    return None
 
-            real_world_dim, repeats = calculate_dimensions(spacing)
-            normal_vector_func = get_trapezoidal_vector_func(rib_width, top_width, spacing, height, repeats)
-            bump_height_func = get_trapezoidal_height_func(rib_width, top_width, spacing, height, repeats)
 
-    except (ValueError, TypeError):
-        ui.forms.Alert("Invalid Input", header="Please ensure all dimension fields contain valid numbers.", exit=True)
+def find_button_by_name(tab_name, panel_name, button_name):
+    """
+    Finds a ribbon button by searching recursively within the target panel.
+    """
+    ribbon = adWin.ComponentManager.Ribbon
+    # Normalize the target name once before starting the search
+    normalized_target_name = normalize_string(button_name)
+    
+    for tab in ribbon.Tabs:
+        if tab.IsVisible and tab.Title == tab_name:
+            for panel in tab.Panels:
+                if panel.Source.Title == panel_name:
+                    # Start the recursive search in the panel's top-level items
+                    return find_item_recursively(panel.Source.Items, normalized_target_name)
+    return None
+
+
+def save_image_source(image_source, file_path):
+    """Saves a .NET ImageSource object to a PNG file."""
+    if not image_source:
+        print("No image data provided for: {}".format(file_path))
         return
+    encoder = imaging.PngBitmapEncoder()
+    try:
+        encoder.Frames.Add(imaging.BitmapFrame.Create(image_source))
+        with io.FileStream(file_path, io.FileMode.Create) as stream:
+            encoder.Save(stream)
+        print("Successfully saved icon to: {}".format(file_path))
     except Exception as e:
-        ui.forms.Alert("An unexpected error occurred during setup.", header=str(e), exit=True)
-        return
+        print("Failed to save icon: {}. Error: {}".format(file_path, e))
 
-    # --- Create Fill Pattern if requested ---
-    pattern_created_msg = ""
-    if values['gen_pattern']:
-        success, reason = create_revit_fill_pattern(revit.doc, pattern_name, spacing)
-        if success:
-            pattern_created_msg = "\n\nFill Pattern '{}' created successfully.".format(pattern_name)
-        else:
-            pattern_created_msg = "\n\nFill Pattern '{}' not created (Reason: {}).".format(pattern_name, reason)
+
+# --- MAIN SCRIPT ---
+
+# 1. DEFINE THE TARGET BUTTON
+# Example for a simple button:
+TARGET_TAB = "View"
+TARGET_PANEL = "Create"
+TARGET_BUTTON = "Legends"
+
+# Example for a button nested in a split button:
+# The button text might have a newline, e.g., "Wall\nArchitectural"
+# Our script will find it simply by searching for "WallArchitectural"
+# TARGET_TAB = "Architecture"
+# TARGET_PANEL = "Build"
+# TARGET_BUTTON = "WallArchitectural"
+
+
+# 2. FIND THE BUTTON
+print("Searching for button '{}'...".format(TARGET_BUTTON))
+target_button = find_button_by_name(TARGET_TAB, TARGET_PANEL, TARGET_BUTTON)
+
+
+# 3. PROCESS AND SAVE THE ICONS
+if target_button:
+    print("Button found!")
+    desktop_path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+    safe_button_name = "".join(c for c in TARGET_BUTTON if c.isalnum() or c in (' ', '_')).rstrip()
+    large_icon_path = os.path.join(desktop_path, "{}_large.png".format(safe_button_name))
+    standard_icon_path = os.path.join(desktop_path, "{}_standard.png".format(safe_button_name))
+
+    large_icon = target_button.LargeImage
+    standard_icon = target_button.Image
     
-    # --- Generate and Save Image Files if requested ---
-    saved_files_msg = ""
-    if values['gen_normal'] or values['gen_bump']:
-        save_path = forms.save_file(files_filter='PNG Image (*.png)|*.png',
-                                    title="Save Normal Map Image",
-                                    default_name=default_filename)
-        
-        if save_path:
-            saved_files = []
-            try:
-                # Generate and save Normal Map
-                if values['gen_normal']:
-                    color_row = generate_color_row(image_size, normal_vector_func)
-                    bitmap = create_bitmap_from_row(image_size, color_row)
-                    bitmap.Save(save_path, ImageFormat.Png)
-                    saved_files.append(save_path)
-
-                # Generate and save Bump Map
-                if values['gen_bump']:
-                    base, ext = os.path.splitext(save_path)
-                    if base.endswith('_normal'):
-                        bump_path = base.replace('_normal', '_bump') + ext
-                    else:
-                        bump_path = base + '_bump' + ext
-
-                    color_row = generate_color_row(image_size, bump_height_func)
-                    bitmap = create_bitmap_from_row(image_size, color_row)
-                    bitmap.Save(bump_path, ImageFormat.Png)
-                    saved_files.append(bump_path)
-                
-                if saved_files:
-                    saved_files_msg = "Files saved successfully:\n" + "\n".join(saved_files)
-                    saved_files_msg += "\n\nFor use in the Revit material editor, set the texture map size to:\n"
-                    saved_files_msg += "Width: {:.2f} mm\nHeight: {:.2f} mm".format(real_world_dim, real_world_dim)
-
-            except Exception as e:
-                ui.forms.Alert(str(e), title="Error Saving File")
+    save_image_source(large_icon, large_icon_path)
+    save_image_source(standard_icon, standard_icon_path)
     
-    # --- Show Final Summary ---
-    final_message = (saved_files_msg + pattern_created_msg).strip()
-    if final_message:
-        forms.alert(final_message, title="Generation Complete")
-
-
-# Main execution point
-if __name__ == '__main__':
-    show_ui_and_generate()
-
-
-
+    forms.alert("Icons have been saved to your Desktop.", title="Script Complete")
+else:
+    forms.alert(
+        "Could not find the specified button: '{}'".format(TARGET_BUTTON),
+        title="Error",
+    )
 
 
 ### END HERE
