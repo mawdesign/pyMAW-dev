@@ -1,0 +1,9 @@
+title:
+  en_us: |-
+    Make Brick
+    Pattern
+tooltip:
+  en_us: >-
+    Creates custom brick and tile patterns
+    with variable brick/tile dimensions and 
+    mortar/grout widths.
