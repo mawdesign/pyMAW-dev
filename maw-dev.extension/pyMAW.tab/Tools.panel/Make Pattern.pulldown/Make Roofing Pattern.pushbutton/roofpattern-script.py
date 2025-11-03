@@ -1,53 +1,65 @@
 # -*- coding: utf-8 -*-
 """
-Normal and Bump Map Generator for Corrugated and Trapezoidal Profiles (IronPython).
+Normal and Bump Map Generator for Corrugated, Trapezoidal, and Ribbed Profiles (IronPython).
 
-This script is compatible with pyRevit's IronPython 2.7 environment.
-It uses rpw FlexForm for user input and the .NET System.Drawing library
-for image generation, removing the need for NumPy and Pillow. It can also
-create a corresponding Revit Model Fill Pattern.
-
-It calculates the required image size to ensure a tileable texture
-that represents a real-world area of at least 300mm with at least 3 repeats.
-Finally, it prompts the user to save the file(s) and displays the
-real-world dimensions for use in Revit's material editor.
+This script uses a WPF/XAML interface.
+It uses the .NET System.Drawing library for image generation.
+It can also create a corresponding Revit Model Fill Pattern and Filled Region Type.
 """
 
+# pyRevit Imports
+from pyrevit import revit, script, forms, DB
+from pyrevit.revit.db.transaction import Transaction
+
 # Required Imports
+import wpf
 import sys
 import os
 from math import pi, cos, sin, ceil, sqrt
 
-# .NET Imports for Image Generation
+# .NET Imports
 import clr
-clr.AddReference('System.Drawing')
+import System
+
+clr.AddReference("System.Drawing")
 from System.Drawing import Bitmap, Color
-from System.Drawing.Imaging import ImageFormat
 
-from pyrevit import forms, DB, revit, HOST_APP
-from pyrevit.revit.db.transaction import Transaction
-from rpw import ui
-from rpw.ui.forms import (FlexForm, Label, ComboBox, TextBox, Separator,
-                          Button, CheckBox)
+clr.AddReference("PresentationFramework")
+from System.Windows import Window
+from System import Uri
+from System.Windows.Media.Imaging import BitmapImage
+
+# Get the directory of the currently running script
+PATH_SCRIPT = script.get_script_path()
+
+# --- VALIDATION FUNCTIONS ---
 
 
-def validate_trapezoid_inputs(values):
+def validate_trapezoid(spacing, rib_width, top_width):
     """Validates that trapezoid dimensions are geometrically possible."""
-    try:
-        rib_width = float(values['trap_rib_width'])
-        top_width = float(values['trap_top_width'])
-        spacing = float(values['trap_spacing'])
-
-        if (rib_width + top_width) >= spacing:
-            ui.forms.Alert(
-                "Invalid Dimensions",
-                header="The sum of 'Rib Width' and 'Top Width' must be less than the 'Rib Spacing'.",
-                exit=True
-            )
-        return True
-    except (ValueError, TypeError):
-        ui.forms.Alert("Invalid Input", header="Please enter valid numbers for all dimensions.", exit=True)
+    if (rib_width + top_width) >= spacing:
+        forms.alert(
+            "The sum of 'Rib Width' and 'Top Width' must be less than the 'Rib Spacing'.",
+            title="Invalid Dimensions",
+            exitscript=True,
+        )
         return False
+    return True
+
+
+def validate_ribbed(spacing, thickness):
+    """Validates that ribbed dimensions are geometrically possible."""
+    if thickness >= spacing:
+        forms.alert(
+            "'Rib Thickness' must be less than 'Rib Spacing'.",
+            title="Invalid Dimensions",
+            exitscript=True,
+        )
+        return False
+    return True
+
+
+# --- IMAGE/PATTERN HELPER FUNCTIONS ---
 
 
 def calculate_dimensions(rib_spacing_mm):
@@ -82,72 +94,88 @@ def create_bitmap_from_row(image_size, color_row):
             bitmap.SetPixel(x, y, color_row[x])
     return bitmap
 
+
 # --- Revit pattern and filled region functions ---
 
-def create_revit_fill_pattern(doc, pattern_name, profile_type, values):
+
+def create_revit_fill_pattern(doc, pattern_name, profile_type, p_values):
     """
     Creates or retrieves a Revit model fill pattern with parallel lines.
     For Corrugated: Creates one line per repeat.
     For Trapezoidal: Creates two lines per repeat (at base of rib).
+    For Ribbed: Creates one line per repeat.
     Returns (FillPatternElement, status_message)
     """
     # Check if a model pattern with this name already exists
-    existing = DB.FillPatternElement.GetFillPatternElementByName(doc, DB.FillPatternTarget.Model, pattern_name)
+    existing = DB.FillPatternElement.GetFillPatternElementByName(
+        doc, DB.FillPatternTarget.Model, pattern_name
+    )
     if existing:
         return existing, "already exists"
 
     try:
         # Create the fill pattern definition
-        fill_pattern = DB.FillPattern(pattern_name, DB.FillPatternTarget.Model, DB.FillPatternHostOrientation.ToHost)
+        fill_pattern = DB.FillPattern(
+            pattern_name,
+            DB.FillPatternTarget.Model,
+            DB.FillPatternHostOrientation.ToHost,
+        )
         grids = []
+        spacing_feet = p_values["spacing"] / 304.8
 
-        if profile_type == 'Corrugated':
-            spacing_mm = float(values['corr_spacing'])
-            spacing_feet = spacing_mm / 304.8
-
+        if profile_type == "Corrugated":
             # Create a single grid of parallel vertical lines
             grid1 = DB.FillGrid()
             grid1.Angle = pi / 2  # Vertical lines
             grid1.Origin = DB.UV(0, 0)
-            grid1.Offset = spacing_feet # Distance between lines
+            grid1.Offset = spacing_feet  # Distance between lines
             grid1.Shift = 0
-            grid1.SetSegments([]) # Solid line
+            grid1.SetSegments([])  # Solid line
             grids.append(grid1)
 
-        elif profile_type == 'Trapezoidal':
-            spacing_mm = float(values['trap_spacing'])
-            rib_width_mm = float(values['trap_rib_width'])
-            
-            spacing_feet = spacing_mm / 304.8
-            rib_width_feet = rib_width_mm / 304.8
+        elif profile_type == "Trapezoidal":
+            rib_width_feet = p_values["rib_width"] / 304.8
 
             # Grid 1: First line of the pair
             grid1 = DB.FillGrid()
             grid1.Angle = pi / 2
             grid1.Origin = DB.UV(0, 0)
-            grid1.Offset = spacing_feet # The PAIR repeats at this offset
+            grid1.Offset = spacing_feet  # The PAIR repeats at this offset
             grid1.Shift = 0
             grid1.SetSegments([])
             grids.append(grid1)
-            
+
             # Grid 2: Second line of the pair, offset by the rib width
             grid2 = DB.FillGrid()
             grid2.Angle = pi / 2
-            grid2.Origin = DB.UV(rib_width_feet, 0) # Offset from the first line
-            grid2.Offset = spacing_feet # The PAIR repeats at this offset
+            grid2.Origin = DB.UV(rib_width_feet, 0)  # Offset from the first line
+            grid2.Offset = spacing_feet  # The PAIR repeats at this offset
             grid2.Shift = 0
             grid2.SetSegments([])
             grids.append(grid2)
 
+        elif profile_type == "Ribbed":
+            origin_offset_feet = (p_values["spacing"] / 2.0) / 304.8
+
+            # Create a single grid of parallel vertical lines
+            grid1 = DB.FillGrid()
+            grid1.Angle = pi / 2
+            grid1.Origin = DB.UV(origin_offset_feet, 0)
+            grid1.Offset = spacing_feet
+            grid1.Shift = 0
+            grid1.SetSegments([])
+            grids.append(grid1)
+
         fill_pattern.SetFillGrids(grids)
 
         # Create the fill pattern element inside a transaction
-        with Transaction('Create Fill Pattern: ' + pattern_name) as rvt_transaction:
+        with Transaction("Create Fill Pattern: " + pattern_name) as rvt_transaction:
             fill_pattern_element = DB.FillPatternElement.Create(doc, fill_pattern)
-                
+
         return fill_pattern_element, "created successfully"
     except Exception as e:
         return None, str(e)
+
 
 def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
     """
@@ -156,73 +184,85 @@ def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
     """
     # Check if a FilledRegionType with this name already exists
     # - Create Filter:
-    param_id  = DB.ElementId(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME)
+    param_id = DB.ElementId(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME)
     param_val = DB.ParameterValueProvider(param_id)
     condition = DB.FilterStringEquals()
-    if HOST_APP.is_older_than(2022):
-        filter_rule = DB.FilterStringRule(param_val, condition, filled_region_name, True)
+    if revit.HOST_APP.is_older_than(2022):
+        filter_rule = DB.FilterStringRule(
+            param_val, condition, filled_region_name, True
+        )
     else:
         filter_rule = DB.FilterStringRule(param_val, condition, filled_region_name)
-    
+
     filled_region_filter = DB.ElementParameterFilter(filter_rule)
-    existing_type = DB.FilteredElementCollector(doc).OfClass(DB.FilledRegionType)\
-        .WherePasses(filled_region_filter).FirstElement()
+    existing_type = (
+        DB.FilteredElementCollector(doc)
+        .OfClass(DB.FilledRegionType)
+        .WherePasses(filled_region_filter)
+        .FirstElement()
+    )
     if existing_type:
         return False, "already exists"
 
     try:
-        with Transaction('Create Filled Region Type: ' + filled_region_name) as t:
+        with Transaction("Create Filled Region Type: " + filled_region_name) as t:
             # Get a default type to duplicate
-            default_type_id = doc.GetDefaultElementTypeId(DB.ElementTypeGroup.FilledRegionType)
+            default_type_id = doc.GetDefaultElementTypeId(
+                DB.ElementTypeGroup.FilledRegionType
+            )
             default_type = doc.GetElement(default_type_id)
-            
+
             if not default_type:
                 # Fallback to finding any solid fill
-                solid_fill_id = DB.FilledRegionType.GetBuiltInFilledRegionTypeId(DB.BuiltInFilledRegionType.SolidBlack)
+                solid_fill_id = DB.FilledRegionType.GetBuiltInFilledRegionTypeId(
+                    DB.BuiltInFilledRegionType.SolidBlack
+                )
                 default_type = doc.GetElement(solid_fill_id)
 
             new_type = default_type.Duplicate(filled_region_name)
-            
+
             # Set the foreground pattern
             new_type.ForegroundPatternId = fill_pattern_element.Id
-            new_type.ForegroundPatternColor = DB.Color(0, 0, 0) # Black lines
-            
+            new_type.ForegroundPatternColor = DB.Color(0, 0, 0)  # Black lines
+
             # Ensure background is transparent
-            new_type.BackgroundPatternId = DB.ElementId(-1) #None
-            new_type.BackgroundPatternColor = DB.Color(0, 0, 0) # Black
+            new_type.BackgroundPatternId = DB.ElementId(-1)  # None
+            new_type.BackgroundPatternColor = DB.Color(0, 0, 0)  # Black
             new_type.IsMasking = False
-            
+
             # Set Line Weight
             new_type.LineWeight = 2
-        
+
         return True, "created successfully"
     except Exception as e:
         return False, str(e)
 
+
 # --- Normal Map Vector Functions ---
+
 
 def get_corrugated_vector_func(spacing_mm, height_mm, num_repeats):
     """Returns a function that calculates the normal vector for a corrugated profile."""
     amplitude = height_mm / 2.0
-    
+
     def get_vector_color(index, total_pixels):
         x = num_repeats * (float(index) / total_pixels)
         dz_dx = (2 * pi * amplitude / spacing_mm) * cos(2 * pi * x)
-        
         magnitude = sqrt(dz_dx**2 + 1)
         nx = -dz_dx / magnitude
         ny = 0.0
         nz = 1 / magnitude
-        
         r = int((nx * 0.5 + 0.5) * 255)
         g = int((ny * 0.5 + 0.5) * 255)
         b = int((nz * 0.5 + 0.5) * 255)
         return r, g, b
-        
+
     return get_vector_color
 
 
-def get_trapezoidal_vector_func(rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats):
+def get_trapezoidal_vector_func(
+    rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats
+):
     """Returns a function that calculates the normal vector for a trapezoidal profile."""
     slope_width = (spacing_mm - rib_width_mm - top_width_mm) / 2.0
     p1 = rib_width_mm
@@ -234,26 +274,62 @@ def get_trapezoidal_vector_func(rib_width_mm, top_width_mm, spacing_mm, height_m
     def get_vector_color(index, total_pixels):
         x_mm = total_width_mm * (float(index) / total_pixels)
         x_mod = x_mm % spacing_mm
-
         dz_dx = 0
         if p1 <= x_mod < p2:
             dz_dx = slope
         elif p3 <= x_mod:
             dz_dx = -slope
-
         magnitude = sqrt(dz_dx**2 + 1)
         nx = -dz_dx / magnitude
         ny = 0.0
         nz = 1 / magnitude
-
         r = int((nx * 0.5 + 0.5) * 255)
         g = int((ny * 0.5 + 0.5) * 255)
         b = int((nz * 0.5 + 0.5) * 255)
         return r, g, b
-        
+
     return get_vector_color
 
+
+def get_ribbed_vector_func(spacing_mm, thickness_mm, height_mm, num_repeats):
+    """
+    Returns a function that calculates the normal vector for a rounded
+    (semi-elliptical) ribbed profile.
+    """
+    a = thickness_mm / 2.0  # semi-minor axis
+    h = height_mm  # semi-major axis
+    p1 = (spacing_mm - thickness_mm) / 2.0
+    p2 = p1 + thickness_mm
+    total_width_mm = spacing_mm * num_repeats
+    # Pre-calculate constants for efficiency
+    a_sq = a**2 if a > 0 else 0
+    h_sq = h**2
+
+    def get_vector_color(index, total_pixels):
+        x_mm = total_width_mm * (float(index) / total_pixels)
+        x_mod = x_mm % spacing_mm
+        dz_dx = 0.0
+        if p1 <= x_mod < p2 and a_sq > 0:
+            x_rel = x_mod - (p1 + a)  # Center x on the rib, range [-a, a]
+            z_term_sq = 1.0 - (x_rel**2 / a_sq)
+            if z_term_sq > 0.00001:  # Check if inside the ellipse and not at the edge
+                z = h * sqrt(z_term_sq)
+                if z > 0.0001:  # Avoid division by zero at the peak
+                    dz_dx = -(h_sq * x_rel) / (a_sq * z)
+        magnitude = sqrt(dz_dx**2 + 1.0)
+        nx = -dz_dx / magnitude
+        ny = 0.0
+        nz = 1.0 / magnitude
+        r = int((nx * 0.5 + 0.5) * 255)
+        g = int((ny * 0.5 + 0.5) * 255)
+        b = int((nz * 0.5 + 0.5) * 255)
+        return r, g, b
+
+    return get_vector_color
+
+
 # --- Bump Map Height Functions ---
+
 
 def get_corrugated_height_func(height_mm, num_repeats):
     """Returns a function that calculates the height for a corrugated profile."""
@@ -270,7 +346,9 @@ def get_corrugated_height_func(height_mm, num_repeats):
     return get_height_color
 
 
-def get_trapezoidal_height_func(rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats):
+def get_trapezoidal_height_func(
+    rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats
+):
     """Returns a function that calculates the height for a trapezoidal profile."""
     slope_width = (spacing_mm - rib_width_mm - top_width_mm) / 2.0
     p1 = rib_width_mm
@@ -282,7 +360,6 @@ def get_trapezoidal_height_func(rib_width_mm, top_width_mm, spacing_mm, height_m
     def get_height_color(index, total_pixels):
         x_mm = total_width_mm * (float(index) / total_pixels)
         x_mod = x_mm % spacing_mm
-        
         height = 0.0
         if p1 <= x_mod < p2:
             height = slope * (x_mod - p1)
@@ -290,161 +367,336 @@ def get_trapezoidal_height_func(rib_width_mm, top_width_mm, spacing_mm, height_m
             height = height_mm
         elif p3 <= x_mod:
             height = height_mm - slope * (x_mod - p3)
-        
         gray = int((height / height_mm) * 255)
         return gray, gray, gray
-    
+
     return get_height_color
 
 
-def show_ui_and_generate():
-    """Defines and shows the FlexForm UI, then triggers generation."""
-    components = [
-        Label('Select Roofing Profile and Dimensions (in mm)'),
-        ComboBox('profile_type', {'Corrugated': 'Corrugated', 'Trapezoidal': 'Trapezoidal'}),
-        Separator(),
-        Label('CORRUGATED PROFILE SETTINGS:'),
-        Label('Rib Spacing:'),
-        TextBox('corr_spacing', Text="76", default="76"),
-        Label('Rib Height:'),
-        TextBox('corr_height', Text="20", default="20"),
-        Separator(),
-        Label('TRAPEZOIDAL PROFILE SETTINGS:'),
-        Label('Rib Width (Bottom):'),
-        TextBox('trap_rib_width', Text="70", default="70"),
-        Label('Top Width:'),
-        TextBox('trap_top_width', Text="20", default="20"),
-        Label('Rib Spacing:'),
-        TextBox('trap_spacing', Text="130", default="130"),
-        Label('Profile Height:'),
-        TextBox('trap_height', Text="40", default="40"),
-        Separator(),
-        Label('SELECT OUTPUTS:'),
-        CheckBox('gen_normal', 'Generate Normal Map', default=True),
-        CheckBox('gen_bump', 'Generate Bump Map', default=True),
-        CheckBox('gen_pattern', 'Create Revit Model Fill Pattern', default=False),
-        CheckBox('gen_fillregion', 'Create Revit Filled Region', default=False),
-        Separator(),
-        Button('Generate')
-    ]
-    form = FlexForm('Map Generator', components)
-    form.show()
+def get_ribbed_height_func(spacing_mm, thickness_mm, height_mm, num_repeats):
+    """
+    Returns a function that calculates the height for a flat
+    (rectangular) ribbed profile. (Black and White)
+    """
+    p1 = (spacing_mm - thickness_mm) / 2.0
+    p2 = p1 + thickness_mm
+    total_width_mm = spacing_mm * num_repeats
 
-    if not form.values:
-        return
+    def get_height_color(index, total_pixels):
+        x_mm = total_width_mm * (float(index) / total_pixels)
+        x_mod = x_mm % spacing_mm
+        gray = 0
+        if p1 <= x_mod < p2:
+            gray = 255
+        return gray, gray, gray
 
-    values = form.values
-    if not values['gen_normal'] and not values['gen_bump'] and not values['gen_pattern']:
-        forms.alert("No outputs selected. Nothing to generate.", title="Action Cancelled")
-        return
+    return get_height_color
 
-    profile_type = values['profile_type']
-    image_size = 1024
-    default_filename = ""
-    pattern_name = ""
-    spacing = 0.0
-    
-    try:
-        if profile_type == 'Corrugated':
-            spacing = float(values['corr_spacing'])
-            height = float(values['corr_height'])
-            default_filename = "Corrugate-{}x{}_normal.png".format(int(spacing), int(height))
-            pattern_name = "Corrugate {}x{}".format(int(spacing), int(height))
-            
-            real_world_dim, repeats = calculate_dimensions(spacing)
-            normal_vector_func = get_corrugated_vector_func(spacing, height, repeats)
-            bump_height_func = get_corrugated_height_func(height, repeats)
-            
-        elif profile_type == 'Trapezoidal':
-            validate_trapezoid_inputs(values)
-            rib_width = float(values['trap_rib_width'])
-            top_width = float(values['trap_top_width'])
-            spacing = float(values['trap_spacing'])
-            height = float(values['trap_height'])
-            default_filename = "Trapezoidal-{}x{}@{}_normal.png".format(int(rib_width), int(height), int(spacing))
-            pattern_name = "Trapezoidal {}x{}@{}".format(int(rib_width), int(height), int(spacing))
 
-            real_world_dim, repeats = calculate_dimensions(spacing)
-            normal_vector_func = get_trapezoidal_vector_func(rib_width, top_width, spacing, height, repeats)
-            bump_height_func = get_trapezoidal_height_func(rib_width, top_width, spacing, height, repeats)
+# --- UI & Generation ---
 
-    except (ValueError, TypeError):
-        ui.forms.Alert("Invalid Input", header="Please ensure all dimension fields contain valid numbers.", exit=True)
-        return
-    except Exception as e:
-        ui.forms.Alert("An unexpected error occurred during setup.", header=str(e), exit=True)
-        return
 
-    # --- Create Fill Pattern and/or Filled Region if requested ---
-    pattern_created_msg = ""
-    fill_region_created_msg = ""
-    pattern_element = None
-    
-    if values['gen_pattern'] or values['gen_fillregion']:
-        # Need to get/create the pattern if either is checked
-        pattern_element, reason = create_revit_fill_pattern(revit.doc, pattern_name, profile_type, values)
-        
-        if values['gen_pattern']: # Only report pattern status if user asked for it
-            if pattern_element:
-                pattern_created_msg = "\n\nFill Pattern '{}' {}.".format(pattern_name, reason)
-            else:
-                pattern_created_msg = "\n\nFill Pattern '{}' not created (Reason: {}).".format(pattern_name, reason)
+class RoofingForm(Window):
+    def __init__(self):
+        # Load XAML file
+        path_xaml_file = os.path.join(PATH_SCRIPT, "roofpatternUI.xaml")
+        wpf.LoadComponent(self, path_xaml_file)
 
-        if values['gen_fillregion']:
-            if pattern_element:
-                success, fr_reason = create_filled_region_type(revit.doc, pattern_name, pattern_element)
-                if success:
-                    fill_region_created_msg = "\nFilled Region Type '{}' created successfully.".format(pattern_name)
+        # Load image assets (Icons and Diagrams)
+        # Assumes images are in the same folder as the script
+        try:
+            # Icons
+            self.IconCorrugated.Source = BitmapImage(
+                Uri(os.path.join(PATH_SCRIPT, "icon_corrugated.png"))
+            )
+            self.IconTrapezoidal.Source = BitmapImage(
+                Uri(os.path.join(PATH_SCRIPT, "icon_trapezoidal.png"))
+            )
+            self.IconRibbed.Source = BitmapImage(
+                Uri(os.path.join(PATH_SCRIPT, "icon_ribbed.png"))
+            )
+
+            # Pre-load diagram URIs
+            self.corrugated_diagram = BitmapImage(
+                Uri(os.path.join(PATH_SCRIPT, "diagram_corrugated.png"))
+            )
+            self.trapezoidal_diagram = BitmapImage(
+                Uri(os.path.join(PATH_SCRIPT, "diagram_trapezoidal.png"))
+            )
+            self.ribbed_diagram = BitmapImage(
+                Uri(os.path.join(PATH_SCRIPT, "diagram_ribbed.png"))
+            )
+
+            # Set initial diagram
+            self.DiagramImage.Source = self.corrugated_diagram
+
+        except Exception as e:
+            forms.alert(
+                "Could not load UI images. "
+                "Make sure icon_*.png and diagram_*.png files are in the script bundle.",
+                title="UI Error",
+            )
+
+        # Show the form
+        self.ShowDialog()
+
+    def RoofType_Changed(self, sender, e):
+        """Hides and shows input fields based on roof type selection."""
+
+        # Determine which radio button is checked
+        profile_type = "Corrugated"  # Default
+        if self.RadioTrapezoidal.IsChecked:
+            profile_type = "Trapezoidal"
+        elif self.RadioRibbed.IsChecked:
+            profile_type = "Ribbed"
+
+        # Set visibility for input panels
+        self.CorrugatedInputs.Visibility = System.Windows.Visibility.Collapsed
+        self.TrapezoidalInputs.Visibility = System.Windows.Visibility.Collapsed
+        self.RibbedInputs.Visibility = System.Windows.Visibility.Collapsed
+
+        # Set diagram
+        if profile_type == "Corrugated":
+            self.CorrugatedInputs.Visibility = System.Windows.Visibility.Visible
+            self.DiagramImage.Source = self.corrugated_diagram
+            # Set default values
+            self.SpacingInput.Text = "76"
+            self.CorrugatedHeightInput.Text = "20"
+
+        elif profile_type == "Trapezoidal":
+            self.TrapezoidalInputs.Visibility = System.Windows.Visibility.Visible
+            self.DiagramImage.Source = self.trapezoidal_diagram
+            # Set default values
+            self.SpacingInput.Text = "130"
+            self.TrapezoidalHeightInput.Text = "40"
+            self.TrapezoidalRibWidthInput.Text = "70"
+            self.TrapezoidalTopWidthInput.Text = "20"
+
+        elif profile_type == "Ribbed":
+            self.RibbedInputs.Visibility = System.Windows.Visibility.Visible
+            self.DiagramImage.Source = self.ribbed_diagram
+            # Set default values
+            self.SpacingInput.Text = "200"
+            self.RibbedHeightInput.Text = "50"
+            self.RibbedThicknessInput.Text = "15"
+
+    def SubmitButton_Click(self, sender, e):
+        """Main logic function. Gathers inputs and runs generators."""
+
+        # Get selected outputs
+        gen_normal = self.CheckNormal.IsChecked
+        gen_bump = self.CheckBump.IsChecked
+        gen_pattern = self.CheckPattern.IsChecked
+        gen_fillregion = self.CheckFillRegion.IsChecked
+
+        if not gen_normal and not gen_bump and not gen_pattern and not gen_fillregion:
+            forms.alert(
+                "No outputs selected. Nothing to generate.", title="Action Cancelled"
+            )
+            return
+
+        # Get profile type
+        profile_type = "Corrugated"
+        if self.RadioTrapezoidal.IsChecked:
+            profile_type = "Trapezoidal"
+        elif self.RadioRibbed.IsChecked:
+            profile_type = "Ribbed"
+
+        # --- Initialize variables ---
+        image_size = 1024
+        default_filename = ""
+        pattern_name = ""
+        pattern_values = {}
+        normal_vector_func = None
+        bump_height_func = None
+        real_world_dim = 0.0
+
+        try:
+            # --- Get Universal Spacing ---
+            spacing = float(self.SpacingInput.Text)
+            pattern_values["spacing"] = spacing
+
+            # --- Get Profile-Specific Values ---
+            if profile_type == "Corrugated":
+                height = float(self.CorrugatedHeightInput.Text)
+                pattern_values["height"] = height
+
+                default_filename = "Corrugate-{}x{}_normal.png".format(
+                    int(spacing), int(height)
+                )
+                pattern_name = "Corrugate {}x{}".format(int(spacing), int(height))
+
+                real_world_dim, repeats = calculate_dimensions(spacing)
+                normal_vector_func = get_corrugated_vector_func(
+                    spacing, height, repeats
+                )
+                bump_height_func = get_corrugated_height_func(height, repeats)
+
+            elif profile_type == "Trapezoidal":
+                height = float(self.TrapezoidalHeightInput.Text)
+                rib_width = float(self.TrapezoidalRibWidthInput.Text)
+                top_width = float(self.TrapezoidalTopWidthInput.Text)
+
+                if not validate_trapezoid(spacing, rib_width, top_width):
+                    return  # Validation failed
+
+                pattern_values["height"] = height
+                pattern_values["rib_width"] = rib_width
+                pattern_values["top_width"] = top_width
+
+                default_filename = "Trapezoidal-{}x{}@{}_normal.png".format(
+                    int(rib_width), int(height), int(spacing)
+                )
+                pattern_name = "Trapezoidal {}x{}@{}".format(
+                    int(rib_width), int(height), int(spacing)
+                )
+
+                real_world_dim, repeats = calculate_dimensions(spacing)
+                normal_vector_func = get_trapezoidal_vector_func(
+                    rib_width, top_width, spacing, height, repeats
+                )
+                bump_height_func = get_trapezoidal_height_func(
+                    rib_width, top_width, spacing, height, repeats
+                )
+
+            elif profile_type == "Ribbed":
+                height = float(self.RibbedHeightInput.Text)
+                thickness = float(self.RibbedThicknessInput.Text)
+
+                if not validate_ribbed(spacing, thickness):
+                    return  # Validation failed
+
+                pattern_values["height"] = height
+                pattern_values["thickness"] = thickness
+
+                default_filename = "Ribbed-{}x{}@{}_normal.png".format(
+                    int(thickness), int(height), int(spacing)
+                )
+                pattern_name = "Ribbed {}x{}@{}".format(
+                    int(thickness), int(height), int(spacing)
+                )
+
+                real_world_dim, repeats = calculate_dimensions(spacing)
+                normal_vector_func = get_ribbed_vector_func(
+                    spacing, thickness, height, repeats
+                )
+                bump_height_func = get_ribbed_height_func(
+                    spacing, thickness, height, repeats
+                )
+
+        except (ValueError, TypeError):
+            forms.alert(
+                "Please ensure all dimension fields contain valid numbers.",
+                title="Invalid Input",
+                exitscript=True,
+            )
+            return
+        except Exception as e:
+            forms.alert(
+                "An unexpected error occurred during setup: " + str(e),
+                title="Error",
+                exitscript=True,
+            )
+            return
+
+        # If we are here, inputs are valid. Close the form.
+        self.Close()
+
+        # --- Run Generation Logic ---
+
+        # --- Create Fill Pattern and/or Filled Region if requested ---
+        pattern_created_msg = ""
+        fill_region_created_msg = ""
+        pattern_element = None
+
+        if gen_pattern or gen_fillregion:
+            pattern_element, reason = create_revit_fill_pattern(
+                revit.doc, pattern_name, profile_type, pattern_values
+            )
+
+            if gen_pattern:
+                if pattern_element:
+                    pattern_created_msg = "\n\nFill Pattern '{}' {}.".format(
+                        pattern_name, reason
+                    )
                 else:
-                    fill_region_created_msg = "\nFilled Region Type '{}' not created (Reason: {}).".format(pattern_name, fr_reason)
-            else:
-                fill_region_created_msg = "\nFilled Region Type not created (Fill Pattern '{}' could not be found or created).".format(pattern_name)
+                    pattern_created_msg = (
+                        "\n\nFill Pattern '{}' not created (Reason: {}).".format(
+                            pattern_name, reason
+                        )
+                    )
 
-    # --- Generate and Save Image Files if requested ---
-    saved_files_msg = ""
-    if values['gen_normal'] or values['gen_bump']:
-        save_path = forms.save_file(files_filter='PNG Image (*.png)|*.png',
-                                    title="Save Normal Map Image",
-                                    default_name=default_filename)
-        
-        if save_path:
-            saved_files = []
-            try:
-                # Generate and save Normal Map
-                if values['gen_normal']:
-                    color_row = generate_color_row(image_size, normal_vector_func)
-                    bitmap = create_bitmap_from_row(image_size, color_row)
-                    bitmap.Save(save_path, ImageFormat.Png)
-                    saved_files.append(save_path)
-
-                # Generate and save Bump Map
-                if values['gen_bump']:
-                    base, ext = os.path.splitext(save_path)
-                    if base.endswith('_normal'):
-                        bump_path = base.replace('_normal', '_bump') + ext
+            if gen_fillregion:
+                if pattern_element:
+                    success, fr_reason = create_filled_region_type(
+                        revit.doc, pattern_name, pattern_element
+                    )
+                    if success:
+                        fill_region_created_msg = (
+                            "\nFilled Region Type '{}' created successfully.".format(
+                                pattern_name
+                            )
+                        )
                     else:
-                        bump_path = base + '_bump' + ext
+                        fill_region_created_msg = "\nFilled Region Type '{}' not created (Reason: {}).".format(
+                            pattern_name, fr_reason
+                        )
+                else:
+                    fill_region_created_msg = "\nFilled Region Type not created (Fill Pattern '{}' could not be found or created).".format(
+                        pattern_name
+                    )
 
-                    color_row = generate_color_row(image_size, bump_height_func)
-                    bitmap = create_bitmap_from_row(image_size, color_row)
-                    bitmap.Save(bump_path, ImageFormat.Png)
-                    saved_files.append(bump_path)
-                
-                if saved_files:
-                    saved_files_msg = "Files saved successfully:\n" + "\n".join(saved_files)
-                    saved_files_msg += "\n\nFor use in the Revit material editor, set the texture map size to:\n"
-                    saved_files_msg += "Width: {:.2f} mm\nHeight: {:.2f} mm".format(real_world_dim, real_world_dim)
+        # --- Generate and Save Image Files if requested ---
+        saved_files_msg = ""
+        if gen_normal or gen_bump:
+            save_path = forms.save_file(
+                files_filter="PNG Image (*.png)|*.png",
+                title="Save Normal Map Image",
+                default_name=default_filename,
+            )
 
-            except Exception as e:
-                ui.forms.Alert(str(e), title="Error Saving File")
-    
-    # --- Show Final Summary ---
-    final_message = (saved_files_msg + pattern_created_msg + fill_region_created_msg).strip()
-    if final_message:
-        forms.alert(final_message, title="Generation Complete")
+            if save_path:
+                saved_files = []
+                try:
+                    if gen_normal:
+                        color_row = generate_color_row(image_size, normal_vector_func)
+                        bitmap = create_bitmap_from_row(image_size, color_row)
+                        bitmap.Save(save_path, System.Drawing.Imaging.ImageFormat.Png)
+                        saved_files.append(save_path)
+
+                    if gen_bump:
+                        base, ext = os.path.splitext(save_path)
+                        if base.endswith("_normal"):
+                            bump_path = base.replace("_normal", "_bump") + ext
+                        else:
+                            bump_path = base + "_bump" + ext
+
+                        color_row = generate_color_row(image_size, bump_height_func)
+                        bitmap = create_bitmap_from_row(image_size, color_row)
+                        bitmap.Save(bump_path, System.Drawing.Imaging.ImageFormat.Png)
+                        saved_files.append(bump_path)
+
+                    if saved_files:
+                        saved_files_msg = "Files saved successfully:\n" + "\n".join(
+                            saved_files
+                        )
+                        saved_files_msg += "\n\nFor use in the Revit material editor, set the texture map size to:\n"
+                        saved_files_msg += "Width: {:.2f} mm\nHeight: {:.2f} mm".format(
+                            real_world_dim, real_world_dim
+                        )
+
+                except Exception as e:
+                    forms.alert(str(e), title="Error Saving File")
+
+        # --- Show Final Summary ---
+        final_message = (
+            saved_files_msg + pattern_created_msg + fill_region_created_msg
+        ).strip()
+        if final_message:
+            forms.alert(final_message, title="Generation Complete")
 
 
 # Main execution point
-if __name__ == '__main__':
-    show_ui_and_generate()
-
+if __name__ == "__main__":
+    # Create and show the form
+    form = RoofingForm()
