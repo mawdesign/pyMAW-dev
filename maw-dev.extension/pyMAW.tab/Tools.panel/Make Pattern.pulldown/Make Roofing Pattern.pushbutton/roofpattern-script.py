@@ -16,6 +16,7 @@ import wpf
 import sys
 import os
 from math import pi, cos, sin, ceil, sqrt
+import ConfigParser
 
 # .NET Imports
 import clr
@@ -31,9 +32,76 @@ from System.Windows.Media.Imaging import BitmapImage
 
 # Get the directory of the currently running script
 PATH_SCRIPT = script.get_script_path()
+CONFIG_FILE = "pattern_settings.ini"
+
+# --- DEFAULT NAMING TEMPLATES (Fallback) ---
+# Used if the .ini file is missing or a key is not found
+DEFAULT_TEMPLATES = {
+    # Corrugated
+    "corrugated_normal_map": "Corrugate-{spacing}x{height}_normal_{size}mm",
+    "corrugated_bump_map": "Corrugate-{spacing}x{height}_bump_{size}mm",
+    "corrugated_pattern_name": "Corrugate {spacing}x{height}",
+    "corrugated_region_name": "Corrugate {spacing}x{height}",
+    # Trapezoidal
+    "trapezoidal_normal_map": "Trapezoidal-{rib_width}x{height}@{spacing}_normal_{size}mm",
+    "trapezoidal_bump_map": "Trapezoidal-{rib_width}x{height}@{spacing}_bump_{size}mm",
+    "trapezoidal_pattern_name": "Trapezoidal {rib_width}x{height}@{spacing}",
+    "trapezoidal_region_name": "Trapezoidal {rib_width}x{height}@{spacing}",
+    # Ribbed
+    "ribbed_normal_map": "Ribbed-{thickness}x{height}@{spacing}_normal_{size}mm",
+    "ribbed_bump_map": "Ribbed-{thickness}x{height}@{spacing}_bump_{size}mm",
+    "ribbed_pattern_name": "Ribbed {thickness}x{height}@{spacing}",
+    "ribbed_region_name": "Ribbed {thickness}x{height}@{spacing}",
+}
+
+
+# --- CONFIGURATION FUNCTIONS ---
+
+def load_config():
+    """Loads naming templates from 'roofing_config.ini'."""
+    config = ConfigParser.ConfigParser()
+    if os.path.exists(os.path.join(PATH_SCRIPT, CONFIG_FILE)):
+        try:
+            PATH_CONFIG = os.path.join(PATH_SCRIPT, CONFIG_FILE)
+            config.read(PATH_CONFIG)
+        except Exception as e:
+            forms.alert(
+                "Error reading config file, falling back to defaults. \nFile: {}\nError: ".format(PATH_CONFIG)
+                + str(e),
+                title = "Error reading config file"
+            )
+            return None  # Will trigger fallback
+    elif os.path.exists(os.path.abspath(os.path.join(PATH_SCRIPT, "..", CONFIG_FILE))):
+        try:
+            PATH_CONFIG = os.path.abspath(os.path.join(PATH_SCRIPT, "..", CONFIG_FILE))
+            config.read(PATH_CONFIG)
+        except Exception as e:
+            forms.alert(
+                "Error reading config file, falling back to defaults. \nFile: {}\nError: ".format(PATH_CONFIG)
+                + str(e),
+                title = "Error reading config file"
+            )
+            return None  # Will trigger fallback
+    return config
+
+
+def get_template(config, profile_type, template_key):
+    """
+    Gets a specific naming template from the config,
+    or falls back to the default.
+    """
+    key = "{}_{}".format(profile_type.lower(), template_key)
+    if (
+        config
+        and config.has_section("Roofing Patterns")
+        and config.has_option("Roofing Patterns", key)
+    ):
+        return config.get("Roofing Patterns", key)
+    else:
+        return DEFAULT_TEMPLATES.get(key, "Roofing")  # Fallback
+
 
 # --- VALIDATION FUNCTIONS ---
-
 
 def validate_trapezoid(spacing, rib_width, top_width):
     """Validates that trapezoid dimensions are geometrically possible."""
@@ -405,7 +473,7 @@ class RoofingForm(Window):
         # Load image assets (Icons and Diagrams)
         # Assumes images are in the same folder as the script
         try:
-            # Icons
+            # --- Load Icons ---
             self.IconCorrugated.Source = BitmapImage(
                 Uri(os.path.join(PATH_SCRIPT, "icon_corrugated.png"))
             )
@@ -416,7 +484,7 @@ class RoofingForm(Window):
                 Uri(os.path.join(PATH_SCRIPT, "icon_ribbed.png"))
             )
 
-            # Pre-load diagram URIs
+            # --- Pre-load diagram URIs ---
             self.corrugated_diagram = BitmapImage(
                 Uri(os.path.join(PATH_SCRIPT, "diagram_corrugated.png"))
             )
@@ -502,35 +570,31 @@ class RoofingForm(Window):
         elif self.RadioRibbed.IsChecked:
             profile_type = "Ribbed"
 
+        # Load naming config
+        config = load_config()
+
         # --- Initialize variables ---
         image_size = 1024
-        default_filename = ""
-        pattern_name = ""
-        pattern_values = {}
         normal_vector_func = None
         bump_height_func = None
         real_world_dim = 0.0
 
+        # Placeholders for formatting
+        spacing, height, rib_width, top_width, thickness = (
+            0.0,
+            None,
+            None,
+            None,
+            None,
+        )
+
         try:
             # --- Get Universal Spacing ---
             spacing = float(self.SpacingInput.Text)
-            pattern_values["spacing"] = spacing
 
             # --- Get Profile-Specific Values ---
             if profile_type == "Corrugated":
                 height = float(self.CorrugatedHeightInput.Text)
-                pattern_values["height"] = height
-
-                default_filename = "Corrugate-{}x{}_normal.png".format(
-                    int(spacing), int(height)
-                )
-                pattern_name = "Corrugate {}x{}".format(int(spacing), int(height))
-
-                real_world_dim, repeats = calculate_dimensions(spacing)
-                normal_vector_func = get_corrugated_vector_func(
-                    spacing, height, repeats
-                )
-                bump_height_func = get_corrugated_height_func(height, repeats)
 
             elif profile_type == "Trapezoidal":
                 height = float(self.TrapezoidalHeightInput.Text)
@@ -540,25 +604,6 @@ class RoofingForm(Window):
                 if not validate_trapezoid(spacing, rib_width, top_width):
                     return  # Validation failed
 
-                pattern_values["height"] = height
-                pattern_values["rib_width"] = rib_width
-                pattern_values["top_width"] = top_width
-
-                default_filename = "Trapezoidal-{}x{}@{}_normal.png".format(
-                    int(rib_width), int(height), int(spacing)
-                )
-                pattern_name = "Trapezoidal {}x{}@{}".format(
-                    int(rib_width), int(height), int(spacing)
-                )
-
-                real_world_dim, repeats = calculate_dimensions(spacing)
-                normal_vector_func = get_trapezoidal_vector_func(
-                    rib_width, top_width, spacing, height, repeats
-                )
-                bump_height_func = get_trapezoidal_height_func(
-                    rib_width, top_width, spacing, height, repeats
-                )
-
             elif profile_type == "Ribbed":
                 height = float(self.RibbedHeightInput.Text)
                 thickness = float(self.RibbedThicknessInput.Text)
@@ -566,23 +611,61 @@ class RoofingForm(Window):
                 if not validate_ribbed(spacing, thickness):
                     return  # Validation failed
 
-                pattern_values["height"] = height
-                pattern_values["thickness"] = thickness
+            # --- Calculate dimensions and get generator functions ---
+            real_world_dim, repeats = calculate_dimensions(spacing)
 
-                default_filename = "Ribbed-{}x{}@{}_normal.png".format(
-                    int(thickness), int(height), int(spacing)
+            if profile_type == "Corrugated":
+                normal_vector_func = get_corrugated_vector_func(
+                    spacing, height, repeats
                 )
-                pattern_name = "Ribbed {}x{}@{}".format(
-                    int(thickness), int(height), int(spacing)
+                bump_height_func = get_corrugated_height_func(height, repeats)
+            elif profile_type == "Trapezoidal":
+                normal_vector_func = get_trapezoidal_vector_func(
+                    rib_width, top_width, spacing, height, repeats
                 )
-
-                real_world_dim, repeats = calculate_dimensions(spacing)
+                bump_height_func = get_trapezoidal_height_func(
+                    rib_width, top_width, spacing, height, repeats
+                )
+            elif profile_type == "Ribbed":
                 normal_vector_func = get_ribbed_vector_func(
                     spacing, thickness, height, repeats
                 )
                 bump_height_func = get_ribbed_height_func(
                     spacing, thickness, height, repeats
                 )
+
+            # --- Prepare placeholders for naming templates ---
+            pattern_values = {
+                "spacing": int(spacing),
+                "height": int(height) if height is not None else 0,
+                "rib_width": int(rib_width) if rib_width is not None else 0,
+                "top_width": int(top_width) if top_width is not None else 0,
+                "thickness": int(thickness) if thickness is not None else 0,
+                "size": int(real_world_dim),
+            }
+
+            # --- Get Naming Templates ---
+            pattern_name_template = get_template(
+                config, profile_type, "pattern_name"
+            )
+            region_name_template = get_template(
+                config, profile_type, "region_name"
+            )
+            normal_map_template = get_template(
+                config, profile_type, "normal_map"
+            )
+            bump_map_template = get_template(config, profile_type, "bump_map")
+
+            # --- Format Names ---
+            pattern_name = pattern_name_template.format(**pattern_values)
+            filled_region_name = region_name_template.format(**pattern_values)
+
+            # --- Determine default filename for save dialog ---
+            default_filename = ""
+            if gen_normal:
+                default_filename = normal_map_template.format(**pattern_values) + ".png"
+            elif gen_bump:
+                default_filename = bump_map_template.format(**pattern_values) + ".png"
 
         except (ValueError, TypeError):
             forms.alert(
@@ -657,25 +740,51 @@ class RoofingForm(Window):
 
             if save_path:
                 saved_files = []
+                save_dir = os.path.dirname(save_path)
                 try:
+                    # --- Determine Normal Map Path ---
+                    normal_path = None
                     if gen_normal:
+                        if gen_bump:
+                            # Both selected: get explicit name for normal map
+                            normal_filename = (
+                                normal_map_template.format(**pattern_values) + ".png"
+                            )
+                            normal_path = os.path.join(save_dir, normal_filename)
+                        else:
+                            # Only normal selected: use the path from save dialog
+                            normal_path = save_path
+
+                    # --- Determine Bump Map Path ---
+                    bump_path = None
+                    if gen_bump:
+                        if gen_normal:
+                            # Both selected: get explicit name for bump map
+                            bump_filename = (
+                                bump_map_template.format(**pattern_values) + ".png"
+                            )
+                            bump_path = os.path.join(save_dir, bump_filename)
+                        else:
+                            # Only bump selected: use the path from save dialog
+                            bump_path = save_path
+
+                    # --- Save Normal Map ---
+                    if gen_normal and normal_path:
                         color_row = generate_color_row(image_size, normal_vector_func)
                         bitmap = create_bitmap_from_row(image_size, color_row)
-                        bitmap.Save(save_path, System.Drawing.Imaging.ImageFormat.Png)
-                        saved_files.append(save_path)
+                        bitmap.Save(
+                            normal_path, System.Drawing.Imaging.ImageFormat.Png
+                        )
+                        saved_files.append(normal_path)
 
-                    if gen_bump:
-                        base, ext = os.path.splitext(save_path)
-                        if base.endswith("_normal"):
-                            bump_path = base.replace("_normal", "_bump") + ext
-                        else:
-                            bump_path = base + "_bump" + ext
-
+                    # --- Save Bump Map ---
+                    if gen_bump and bump_path:
                         color_row = generate_color_row(image_size, bump_height_func)
                         bitmap = create_bitmap_from_row(image_size, color_row)
                         bitmap.Save(bump_path, System.Drawing.Imaging.ImageFormat.Png)
                         saved_files.append(bump_path)
 
+                    # --- Format Save Message ---
                     if saved_files:
                         saved_files_msg = "Files saved successfully:\n" + "\n".join(
                             saved_files
