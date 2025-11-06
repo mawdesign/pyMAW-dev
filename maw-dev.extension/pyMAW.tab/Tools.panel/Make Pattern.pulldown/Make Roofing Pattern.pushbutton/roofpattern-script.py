@@ -18,6 +18,9 @@ import os
 from math import pi, cos, sin, ceil, sqrt
 import ConfigParser
 
+# Import Shared Config Library
+import pattern_config
+
 # .NET Imports
 import clr
 import System
@@ -32,76 +35,10 @@ from System.Windows.Media.Imaging import BitmapImage
 
 # Get the directory of the currently running script
 PATH_SCRIPT = script.get_script_path()
-CONFIG_FILE = "pattern_settings.ini"
-
-# --- DEFAULT NAMING TEMPLATES (Fallback) ---
-# Used if the .ini file is missing or a key is not found
-DEFAULT_TEMPLATES = {
-    # Corrugated
-    "corrugated_normal_map": "Corrugate-{spacing}x{height}_normal_{size}mm",
-    "corrugated_bump_map": "Corrugate-{spacing}x{height}_bump_{size}mm",
-    "corrugated_pattern_name": "Corrugate {spacing}x{height}",
-    "corrugated_region_name": "Corrugate {spacing}x{height}",
-    # Trapezoidal
-    "trapezoidal_normal_map": "Trapezoidal-{rib_width}x{height}@{spacing}_normal_{size}mm",
-    "trapezoidal_bump_map": "Trapezoidal-{rib_width}x{height}@{spacing}_bump_{size}mm",
-    "trapezoidal_pattern_name": "Trapezoidal {rib_width}x{height}@{spacing}",
-    "trapezoidal_region_name": "Trapezoidal {rib_width}x{height}@{spacing}",
-    # Ribbed
-    "ribbed_normal_map": "Ribbed-{thickness}x{height}@{spacing}_normal_{size}mm",
-    "ribbed_bump_map": "Ribbed-{thickness}x{height}@{spacing}_bump_{size}mm",
-    "ribbed_pattern_name": "Ribbed {thickness}x{height}@{spacing}",
-    "ribbed_region_name": "Ribbed {thickness}x{height}@{spacing}",
-}
-
-
-# --- CONFIGURATION FUNCTIONS ---
-
-def load_config():
-    """Loads naming templates from 'roofing_config.ini'."""
-    config = ConfigParser.ConfigParser()
-    if os.path.exists(os.path.join(PATH_SCRIPT, CONFIG_FILE)):
-        try:
-            PATH_CONFIG = os.path.join(PATH_SCRIPT, CONFIG_FILE)
-            config.read(PATH_CONFIG)
-        except Exception as e:
-            forms.alert(
-                "Error reading config file, falling back to defaults. \nFile: {}\nError: ".format(PATH_CONFIG)
-                + str(e),
-                title = "Error reading config file"
-            )
-            return None  # Will trigger fallback
-    elif os.path.exists(os.path.abspath(os.path.join(PATH_SCRIPT, "..", CONFIG_FILE))):
-        try:
-            PATH_CONFIG = os.path.abspath(os.path.join(PATH_SCRIPT, "..", CONFIG_FILE))
-            config.read(PATH_CONFIG)
-        except Exception as e:
-            forms.alert(
-                "Error reading config file, falling back to defaults. \nFile: {}\nError: ".format(PATH_CONFIG)
-                + str(e),
-                title = "Error reading config file"
-            )
-            return None  # Will trigger fallback
-    return config
-
-
-def get_template(config, profile_type, template_key):
-    """
-    Gets a specific naming template from the config,
-    or falls back to the default.
-    """
-    key = "{}_{}".format(profile_type.lower(), template_key)
-    if (
-        config
-        and config.has_section("Roofing Patterns")
-        and config.has_option("Roofing Patterns", key)
-    ):
-        return config.get("Roofing Patterns", key)
-    else:
-        return DEFAULT_TEMPLATES.get(key, "Roofing")  # Fallback
 
 
 # --- VALIDATION FUNCTIONS ---
+
 
 def validate_trapezoid(spacing, rib_width, top_width):
     """Validates that trapezoid dimensions are geometrically possible."""
@@ -571,7 +508,8 @@ class RoofingForm(Window):
             profile_type = "Ribbed"
 
         # Load naming config
-        config = load_config()
+        config = pattern_config.load_config(PATH_SCRIPT)
+        CONFIG_SECTION = "Roofing Patterns"
 
         # --- Initialize variables ---
         image_size = 1024
@@ -645,16 +583,19 @@ class RoofingForm(Window):
             }
 
             # --- Get Naming Templates ---
-            pattern_name_template = get_template(
-                config, profile_type, "pattern_name"
+            key_suffix = profile_type.lower()
+            pattern_name_template = pattern_config.get_template(
+                config, CONFIG_SECTION, key_suffix + "_pattern_name"
             )
-            region_name_template = get_template(
-                config, profile_type, "region_name"
+            region_name_template = pattern_config.get_template(
+                config, CONFIG_SECTION, key_suffix + "_region_name"
             )
-            normal_map_template = get_template(
-                config, profile_type, "normal_map"
+            normal_map_template = pattern_config.get_template(
+                config, CONFIG_SECTION, key_suffix + "_normal_map"
             )
-            bump_map_template = get_template(config, profile_type, "bump_map")
+            bump_map_template = pattern_config.get_template(
+                config, CONFIG_SECTION, key_suffix + "_bump_map"
+            )
 
             # --- Format Names ---
             pattern_name = pattern_name_template.format(**pattern_values)
@@ -712,21 +653,21 @@ class RoofingForm(Window):
             if gen_fillregion:
                 if pattern_element:
                     success, fr_reason = create_filled_region_type(
-                        revit.doc, pattern_name, pattern_element
+                        revit.doc, filled_region_name, pattern_element
                     )
                     if success:
                         fill_region_created_msg = (
                             "\nFilled Region Type '{}' created successfully.".format(
-                                pattern_name
+                                filled_region_name
                             )
                         )
                     else:
                         fill_region_created_msg = "\nFilled Region Type '{}' not created (Reason: {}).".format(
-                            pattern_name, fr_reason
+                            filled_region_name, fr_reason
                         )
                 else:
                     fill_region_created_msg = "\nFilled Region Type not created (Fill Pattern '{}' could not be found or created).".format(
-                        pattern_name
+                        filled_region_name
                     )
 
         # --- Generate and Save Image Files if requested ---
