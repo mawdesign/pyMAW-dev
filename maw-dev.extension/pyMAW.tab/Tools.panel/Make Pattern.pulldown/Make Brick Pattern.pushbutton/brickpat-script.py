@@ -3,6 +3,8 @@
 # from pyrevit import HOST_APP
 from pyrevit import revit, script, forms
 import wpf, os, clr
+import glob
+from pyrevit.coreutils import yaml
 
 # .NET Imports
 clr.AddReference("System")
@@ -11,12 +13,14 @@ from System import Uri
 from System.Windows.Media.Imaging import BitmapImage
 
 PATH_SCRIPT = script.get_script_path()
-
+PATH_IMAGES = os.path.join(PATH_SCRIPT, "images")
+PATH_SETTINGS = os.path.join(PATH_SCRIPT, "brickpats.yaml")
 
 class BrickForm(Window):
 
-    def __init__(self):
+    def __init__(self, settings):
         # Initialize the defaults
+        self.settings = settings
         self.brick_width = "230"
         self.brick_height = "76"
         self.brick_depth = "70"
@@ -29,10 +33,10 @@ class BrickForm(Window):
 
         # Set defaults
         self.Title = "Brick Input Form"
-        self.Width = 450
-        self.Height = 650
+        self.Width = 400
+        self.Height = 900
 
-        brick_dims_uri = Uri(os.path.join(PATH_SCRIPT, "brickdims.png"))
+        brick_dims_uri = Uri(os.path.join(PATH_IMAGES, "brickdims.png"))
         self.BrickDims.Source = BitmapImage(brick_dims_uri)
 
         self.ImagePalette.ItemsSource = self.get_image_thumbnails()
@@ -49,15 +53,19 @@ class BrickForm(Window):
 
     def get_image_thumbnails(self):
         """Returns a list of image thumbnail paths."""
-        brick_dims_uri = Uri(os.path.join(PATH_SCRIPT, "brickdims.png"))
-        return [BitmapImage(brick_dims_uri)]
+        # thumbs = glob.glob(os.path.join(PATH_IMAGES, "*_THUMB.png"))
+        thumbs = [BrickThumb({"Name": pat, "ToolTip": pdef["name"], "Thumbnail": os.path.join(PATH_IMAGES, pdef["thumbnail"])}) for pat, pdef in self.settings.items()]
+        return thumbs
 
 
     # <!-- Events --->
     def Thumbnail_MouseLeftButtonDown(self, sender, e):
-        thumbnail = sender.Source
-        # test
-        self.SelectedImage.Source = thumbnail
+        selected = sender.Tag
+        preview = os.path.join(PATH_IMAGES, self.settings[selected]["preview"])
+        if os.path.isfile(preview):
+            self.SelectedImage.Source = BitmapImage(Uri(preview))
+            self.SelectedTitle.Text = self.settings[selected]["name"] + "\n"
+            self.SelectedDescription.Text = self.settings[selected]["description"]
 
     def SubmitButton_Click(self, sender, e):
         """Handles the submit button click event."""
@@ -69,6 +77,11 @@ class BrickForm(Window):
 
         self.Close()
 
+class BrickThumb(object):
+    def __init__(self, thumb):
+        self.PatternName = thumb["Name"]
+        self.ToolTip = thumb["ToolTip"]
+        self.Thumbnail = BitmapImage(Uri(thumb["Thumbnail"]))
 
 def is_number(n):
     is_number = True
@@ -219,9 +232,11 @@ template = """;%UNITS={units}
 def make_brick_pattern():
     # `SelectImageButton_Click` and `SubmitButton_Click
     # `HeightInput`, `WidthInput`, `DepthInput`, `JointSizeInput`, and `IsMetric`
+    # Load settings
+    settings = yaml.load_as_dict(PATH_SETTINGS)
 
     # Show form to the user
-    UI = BrickForm()
+    UI = BrickForm(settings)
 
     # Get User Input
     brick = {
@@ -233,6 +248,8 @@ def make_brick_pattern():
     }
 
     # Generate pattern
+    # for key, value in settings[0].items():
+        # print("{}: {}".format(key, str(value)))
     print("Selected pattern = {}".format(str(UI.SelectedImage.Source)))
     pattern = template.format(**brick)
     print(pattern)
@@ -242,130 +259,3 @@ def make_brick_pattern():
 
 if __name__ == "__main__":
     make_brick_pattern()
-
-
-# import clr
-# import os
-
-# # Add reference to PresentationFramework and WindowsBase
-# clr.AddReference('PresentationFramework')
-# clr.AddReference('WindowsBase')
-
-# # Import necessary WPF namespaces
-# from System.Windows import Application, Window
-# from System.Windows.Controls import StackPanel, TextBlock, TextBox, Button, Image, RadioButton, ItemsControl, WrapPanel
-# from System.Windows.Input import MouseButtonEventArgs
-
-
-class ImageSelectorForm(Window):
-    def __init__(self):
-        # Initialize the window
-        self.Title = "Dimensions Input Form"
-        self.Width = 400
-        self.Height = 400
-        self.Margin = 20
-
-        # Create a StackPanel
-        self.panel = StackPanel()
-
-        # Add components to the panel
-        self.setup_ui()
-
-        # Set the content of the window
-        self.Content = self.panel
-
-    def setup_ui(self):
-        # TextBlock for image selection
-        self.panel.Children.Add(TextBlock(Text="Select an Image:", FontWeight="Bold"))
-
-        # Image Palette
-        self.image_palette = ItemsControl()
-        self.image_palette.ItemsSource = self.get_image_thumbnails()
-
-        # Set ItemsPanel to WrapPanel
-        self.image_palette.ItemsPanel = ItemsPanelTemplate(WrapPanel())
-
-        # Create the ItemTemplate for thumbnails
-        thumbnail_template = DataTemplate()
-        thumbnail_image = Image()
-        thumbnail_image.Width = 50
-        thumbnail_image.Height = 50
-        thumbnail_image.MouseLeftButtonDown += self.thumbnail_click
-        thumbnail_template.VisualTree = thumbnail_image
-
-        self.image_palette.ItemTemplate = thumbnail_template
-
-        self.panel.Children.Add(self.image_palette)
-
-        # Selected Image Preview
-        self.selected_image = Image(Width=100, Height=100, Margin=20)
-        self.panel.Children.Add(
-            TextBlock(Text="Selected Image Preview:", FontWeight="Bold")
-        )
-        self.panel.Children.Add(self.selected_image)
-
-        # Dimensions Section
-        self.panel.Children.Add(
-            TextBlock(Text="Dimensions:", FontWeight="Bold", FontSize=16)
-        )
-
-        self.height_input = self.create_input("Height:", "100")
-        self.width_input = self.create_input("Width:", "100")
-        self.depth_input = self.create_input("Depth:", "50")
-        self.joint_size_input = self.create_input("Joint Size:", "5")
-
-        # Unit of Measurement
-        self.panel.Children.Add(
-            TextBlock(Text="Unit of Measurement:", FontWeight="Bold")
-        )
-        self.metric_radio = RadioButton(Content="Metric", IsChecked=True)
-        self.imperial_radio = RadioButton(Content="Imperial")
-
-        self.panel.Children.Add(self.metric_radio)
-        self.panel.Children.Add(self.imperial_radio)
-
-        # Submit Button
-        self.submit_button = Button(Content="Submit")
-        self.submit_button.Click += self.submit
-        self.panel.Children.Add(self.submit_button)
-
-    def create_input(self, label, default_value):
-        """Creates a labeled TextBox for input."""
-        stack = StackPanel(Orientation=Horizontal)
-        stack.Children.Add(TextBlock(Text=label, VerticalAlignment="Center"))
-        text_box = TextBox(Width=50, Margin=5)
-        text_box.Text = default_value
-        stack.Children.Add(text_box)
-        self.panel.Children.Add(stack)
-        return text_box
-
-    def get_image_thumbnails(self):
-        """Returns a list of image thumbnail paths."""
-        # Here you should return the actual paths to your images
-        return ["path/to/image1.jpg", "path/to/image2.jpg", "path/to/image3.jpg"]
-
-    def thumbnail_click(self, sender, e):
-        """Handles thumbnail click event to update the selected image."""
-        # Update the selected image source
-        thumbnail = sender.Source
-        self.selected_image.Source = thumbnail.Source
-
-    def submit(self, sender, e):
-        """Handles the submit button click event."""
-        # Handle the submission logic here
-        height = self.height_input.Text
-        width = self.width_input.Text
-        depth = self.depth_input.Text
-        joint_size = self.joint_size_input.Text
-        is_metric = self.metric_radio.IsChecked
-        is_imperial = self.imperial_radio.IsChecked
-
-        # This is where you would process the input values
-        print(
-            "Height: {height}, Width: {width}, Depth: {depth}, Joint Size: {joint_size}, Metric: {is_metric}"
-        )
-
-
-# Entry point for the application
-# if __name__ == "__main__":
-# Application().Run(ImageSelectorForm())
