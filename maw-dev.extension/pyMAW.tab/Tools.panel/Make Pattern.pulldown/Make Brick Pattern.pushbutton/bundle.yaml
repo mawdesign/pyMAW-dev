@@ -1,9 +1,18 @@
 title:
   en_us: |-
-    Make Brick
+    Brick
     Pattern
 tooltip:
   en_us: >-
-    Creates custom brick and tile patterns
-    with variable brick/tile dimensions and 
-    mortar/grout widths.
+    Generate brick and tile patterns and filled region types for custom
+    brick sizes.
+
+    Select the brick or tile pattern, enter the desired dimensions and
+    this tool will create the desired pattern and filled region. Patterns and
+    filled regions will be named in a standard format.
+
+
+    TIP: There are patterns with double lines for the mortar/grout, and single
+    line versions, both take the mortar/grout width into consideration so the
+    single line versions will match the double line ones accurately.
+   
