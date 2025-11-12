@@ -1,0 +1,27 @@
+# brick patterns
+ENGLISH:
+    name: English bond with mortar joints
+    description: >-
+        Alternate rows of stretcher and header bonds
+    thumbnail: ENGLISH_THUMB.png
+    preview: ENGLISH_PREVIEW.png
+    typename: "Brick - English Bond {width}x{height} with {mortar}mm mortar"
+    template: |
+        *BRICK_{width}x{height}x{mortar}ENGLISH,English bond {width} x {height}mm brick with {mortar}mm mortar
+        ;%TYPE=MODEL
+        0,0,({height}+{mortar}/2),0,({height}+{mortar})
+        90,({width}-({width}+{mortar})/4-{mortar}/2),({height}*2+{mortar}*1.5),0,({width}+{mortar}),({height}+{mortar}),-({height}+{mortar})
+        90,({width}/2),({height}+{mortar}/2),0,({width}/2+{mortar}/2),({height}+{mortar}),-({height}+{mortar})
+ENGLISH_SL:
+    name: English bond with mortar joints - single line version
+    description: >-
+        Alternate rows of stretcher and header bonds
+    thumbnail: ENGLISH_SL_THUMB.png
+    preview: ENGLISH_SL_PREVIEW.png
+    typename: "Brick - English Bond {width}x{height} with {mortar}mm mortar - single line"
+    template: |
+        *BRICK_{width}x{height}x{mortar}ENGLISH_SL,English bond {width} x {height}mm brick with {mortar}mm mortar - single line version
+        ;%TYPE=MODEL
+        0,0,({height}+{mortar}/2),0,({height}+{mortar})
+        90,({width}-({width}+{mortar})/4-{mortar}/2),({height}*2+{mortar}*1.5),0,({width}+{mortar}),({height}+{mortar}),-({height}+{mortar})
+        90,({width}/2),({height}+{mortar}/2),0,({width}/2+{mortar}/2),({height}+{mortar}),-({height}+{mortar})
