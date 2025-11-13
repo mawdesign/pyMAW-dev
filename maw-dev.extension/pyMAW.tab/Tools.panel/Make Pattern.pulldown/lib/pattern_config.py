@@ -256,9 +256,7 @@ def edit_config(script_path, section_name):
                 "Create General Config (in folder above)",
                 "Cancel",
             ],
-            # "Config File Not Found", 500, 300, 
-            message='Select Item'
-            # prompt="'pattern_settings.ini' was not found. What would you like to do?",
+            message="'pattern_settings.ini' was not found. What would you like to do?",
         )
 
         if option == "Create Specific Config (in this button's folder)":

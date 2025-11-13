@@ -1,353 +1,305 @@
 # -*- coding: utf-8 -*-
 """
-Normal and Bump Map Generator for Corrugated and Trapezoidal Profiles (IronPython).
-
-This script is compatible with pyRevit's IronPython 2.7 environment.
-It uses rpw FlexForm for user input and the .NET System.Drawing library
-for image generation, removing the need for NumPy and Pillow. It can also
-create a corresponding Revit Model Fill Pattern.
-
-It calculates the required image size to ensure a tileable texture
-that represents a real-world area of at least 300mm with at least 3 repeats.
-Finally, it prompts the user to save the file(s) and displays the
-real-world dimensions for use in Revit's material editor.
+Shared library for creating and updating Revit Materials,
+specifically for applying surface patterns and appearance assets
+like bump maps with real-world scaling.
 """
 
-# Required Imports
-import sys
-import os
-from math import pi, cos, sin, ceil, sqrt
+# pyRevit Imports
+from pyrevit import revit, script, forms, DB
+from pyrevit.revit.db.transaction import Transaction
 
-# .NET Imports for Image Generation
+# .NET Imports
 import clr
-clr.AddReference('System.Drawing')
-from System.Drawing import Bitmap, Color
-from System.Drawing.Imaging import ImageFormat
+import System
+from System.Collections.Generic import IList
+import traceback  # <--- ADDED FOR DETAILED ERROR LOGGING
 
-from pyrevit import forms
-from rpw import revit, db, ui
-from rpw.ui.forms import (FlexForm, Label, ComboBox, TextBox, Separator,
-                          Button, CheckBox)
+clr.AddReference("System.Core")
+clr.AddReference("System")
 
 
-def validate_trapezoid_inputs(values):
-    """Validates that trapezoid dimensions are geometrically possible."""
-    try:
-        rib_width = float(values['trap_rib_width'])
-        top_width = float(values['trap_top_width'])
-        spacing = float(values['trap_spacing'])
-
-        if (rib_width + top_width) >= spacing:
-            ui.forms.Alert(
-                "Invalid Dimensions",
-                header="The sum of 'Rib Width' and 'Top Width' must be less than the 'Rib Spacing'.",
-                exit=True
-            )
-        return True
-    except (ValueError, TypeError):
-        ui.forms.Alert("Invalid Input", header="Please enter valid numbers for all dimensions.", exit=True)
-        return False
+def _get_material_by_name(doc, name):
+    """Finds an existing material by name."""
+    collector = DB.FilteredElementCollector(doc).OfClass(DB.Material)
+    for mat in collector:
+        if mat.Name == name:
+            return mat
+    return None
 
 
-def calculate_dimensions(rib_spacing_mm):
+def _create_new_appearance_asset(doc, asset_name):
     """
-    Calculates the real-world size and number of repeats for the texture.
-    Ensures the texture is at least 300mm wide and has at least 3 repeats.
+    Creates a new AppearanceAssetElement by duplicating the "Generic" asset.
+    Returns the ElementId of the new asset.
     """
-    width_for_3_repeats = rib_spacing_mm * 3.0
-    target_real_world_width = max(300.0, width_for_3_repeats)
-    num_repeats = int(ceil(target_real_world_width / rib_spacing_mm))
-    final_real_world_width = num_repeats * rib_spacing_mm
-    return final_real_world_width, num_repeats
+    # Try to find the default "Generic" asset to duplicate
+    base_asset_elem = None
+    collector = DB.FilteredElementCollector(doc).OfClass(DB.AppearanceAssetElement)
+    for asset_elem in collector:
+        if asset_elem.Name[:7] == "Generic":
+            base_asset_elem = asset_elem
+            break
 
-
-def generate_color_row(pixel_count, generation_func):
-    """
-    Generates a single row of pixel colors by calling a generation function
-    for each pixel.
-    """
-    color_row = []
-    for i in range(pixel_count):
-        color_components = generation_func(i, pixel_count)
-        color_row.append(Color.FromArgb(*color_components))
-    return color_row
-
-
-def create_bitmap_from_row(image_size, color_row):
-    """Creates a .NET Bitmap by tiling a single row of colors."""
-    bitmap = Bitmap(image_size, image_size)
-    for y in range(image_size):
-        for x in range(image_size):
-            bitmap.SetPixel(x, y, color_row[x])
-    return bitmap
-
-
-def create_revit_fill_pattern(doc, pattern_name, spacing_mm):
-    """Creates a Revit model fill pattern with parallel lines."""
-    # Check if a model pattern with this name already exists
-    # existing = db.FillPatternElement.GetFillPatternElementByName(doc, db.FillPatternTarget.Model, pattern_name)
-    # if existing:
-        # return False, "already exists"
-
-    # Convert spacing from millimeters to Revit's internal units (feet)
-    spacing_feet = spacing_mm / 304.8
+    if not base_asset_elem:
+        # Fallback if "Generic" isn't found (highly unlikely)
+        forms.alert("Could not find 'Generic' appearance asset to duplicate.")
+        return DB.ElementId.InvalidElementId
 
     try:
-        # Create the fill pattern definition
-        fill_pattern = db.FillPattern(pattern_name, db.FillPatternTarget.Model, db.FillPatternHostOrientation.ToHost)
-
-        # Create a grid of parallel vertical lines
-        fill_grid = db.FillGrid()
-        fill_grid.Angle = pi / 2  # Vertical lines
-        fill_grid.Origin = db.UV(0, 0)
-        fill_grid.Offset = spacing_feet # Distance between lines
-        fill_grid.Shift = 0
-        # An empty segments list creates solid lines
-        fill_grid.SetSegments([])
-
-        fill_pattern.SetFillGrids([fill_grid])
-
-        # Create the fill pattern element inside a transaction
-        with db.Transaction('Create Fill Pattern: ' + pattern_name):
-            db.FillPatternElement.Create(doc, fill_pattern)
-        
-        return True, "created successfully"
+        new_asset_elem = base_asset_elem.Duplicate(asset_name)
+        return new_asset_elem.Id
     except Exception as e:
-        return False, str(e)
-
-# --- Normal Map Vector Functions ---
-
-def get_corrugated_vector_func(spacing_mm, height_mm, num_repeats):
-    """Returns a function that calculates the normal vector for a corrugated profile."""
-    amplitude = height_mm / 2.0
-    
-    def get_vector_color(index, total_pixels):
-        x = num_repeats * (float(index) / total_pixels)
-        dz_dx = (2 * pi * amplitude / spacing_mm) * cos(2 * pi * x)
-        
-        magnitude = sqrt(dz_dx**2 + 1)
-        nx = -dz_dx / magnitude
-        ny = 0.0
-        nz = 1 / magnitude
-        
-        r = int((nx * 0.5 + 0.5) * 255)
-        g = int((ny * 0.5 + 0.5) * 255)
-        b = int((nz * 0.5 + 0.5) * 255)
-        return r, g, b
-        
-    return get_vector_color
+        print("Error duplicating appearance asset: {}".format(e))
+        return DB.ElementId.InvalidElementId
 
 
-def get_trapezoidal_vector_func(rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats):
-    """Returns a function that calculates the normal vector for a trapezoidal profile."""
-    slope_width = (spacing_mm - rib_width_mm - top_width_mm) / 2.0
-    p1 = rib_width_mm
-    p2 = p1 + slope_width
-    p3 = p2 + top_width_mm
-    slope = height_mm / slope_width if slope_width > 0 else 0
-    total_width_mm = spacing_mm * num_repeats
+def create_or_update_material(
+    doc,
+    material_name,
+    material_color,
+    surface_pattern_element,
+    bump_map_path,
+    texture_real_world_width_int,
+    texture_real_world_height_int,
+):
+    """
+    Creates a new material or updates an existing one with graphics
+    and appearance properties.
 
-    def get_vector_color(index, total_pixels):
-        x_mm = total_width_mm * (float(index) / total_pixels)
-        x_mod = x_mm % spacing_mm
+    Args:
+        doc (Document): The active Revit document.
+        material_name (str): The name of the material to create/find.
+        material_color (DB.Color): The base color for graphics.
+        surface_pattern_element (DB.FillPatternElement): The pattern for the
+                                                          graphics surface.
+        bump_map_path (str): Absolute file path to the bump map texture.
+        texture_real_world_width_int (float): Texture width in internal units (feet).
+        texture_real_world_height_int (float): Texture height in internal units (feet).
 
-        dz_dx = 0
-        if p1 <= x_mod < p2:
-            dz_dx = slope
-        elif p3 <= x_mod:
-            dz_dx = -slope
+    Returns:
+        (DB.Material, str): (The material element, status message)
+    """
+    if not System.IO.File.Exists(bump_map_path):
+        return None, "Bump map file not found at path: {}".format(bump_map_path)
 
-        magnitude = sqrt(dz_dx**2 + 1)
-        nx = -dz_dx / magnitude
-        ny = 0.0
-        nz = 1 / magnitude
+    if not surface_pattern_element:
+        return None, "Invalid surface pattern element provided."
 
-        r = int((nx * 0.5 + 0.5) * 255)
-        g = int((ny * 0.5 + 0.5) * 255)
-        b = int((nz * 0.5 + 0.5) * 255)
-        return r, g, b
-        
-    return get_vector_color
-
-# --- Bump Map Height Functions ---
-
-def get_corrugated_height_func(height_mm, num_repeats):
-    """Returns a function that calculates the height for a corrugated profile."""
-    amplitude = height_mm / 2.0
-
-    def get_height_color(index, total_pixels):
-        x = num_repeats * (float(index) / total_pixels)
-        # Shift sine wave to be in range [0, height_mm]
-        height = amplitude * sin(2 * pi * x) + amplitude
-        # Normalize to grayscale value
-        gray = int((height / height_mm) * 255)
-        return gray, gray, gray
-
-    return get_height_color
-
-
-def get_trapezoidal_height_func(rib_width_mm, top_width_mm, spacing_mm, height_mm, num_repeats):
-    """Returns a function that calculates the height for a trapezoidal profile."""
-    slope_width = (spacing_mm - rib_width_mm - top_width_mm) / 2.0
-    p1 = rib_width_mm
-    p2 = p1 + slope_width
-    p3 = p2 + top_width_mm
-    slope = height_mm / slope_width if slope_width > 0 else 0
-    total_width_mm = spacing_mm * num_repeats
-
-    def get_height_color(index, total_pixels):
-        x_mm = total_width_mm * (float(index) / total_pixels)
-        x_mod = x_mm % spacing_mm
-        
-        height = 0.0
-        if p1 <= x_mod < p2:
-            height = slope * (x_mod - p1)
-        elif p2 <= x_mod < p3:
-            height = height_mm
-        elif p3 <= x_mod:
-            height = height_mm - slope * (x_mod - p3)
-        
-        gray = int((height / height_mm) * 255)
-        return gray, gray, gray
-    
-    return get_height_color
-
-
-def show_ui_and_generate():
-    """Defines and shows the FlexForm UI, then triggers generation."""
-    components = [
-        Label('Select Roofing Profile and Dimensions (in mm)'),
-        ComboBox('profile_type', {'Corrugated': 'Corrugated', 'Trapezoidal': 'Trapezoidal'}),
-        Separator(),
-        Label('CORRUGATED PROFILE SETTINGS:'),
-        Label('Rib Spacing:'),
-        TextBox('corr_spacing', Text="76", default="76"),
-        Label('Rib Height:'),
-        TextBox('corr_height', Text="20", default="20"),
-        Separator(),
-        Label('TRAPEZOIDAL PROFILE SETTINGS:'),
-        Label('Rib Width (Bottom):'),
-        TextBox('trap_rib_width', Text="70", default="70"),
-        Label('Top Width:'),
-        TextBox('trap_top_width', Text="20", default="20"),
-        Label('Rib Spacing:'),
-        TextBox('trap_spacing', Text="130", default="130"),
-        Label('Profile Height:'),
-        TextBox('trap_height', Text="40", default="40"),
-        Separator(),
-        Label('SELECT OUTPUTS:'),
-        CheckBox('gen_normal', 'Generate Normal Map', default=True),
-        CheckBox('gen_bump', 'Generate Bump Map', default=True),
-        CheckBox('gen_pattern', 'Create Revit Model Fill Pattern', default=False),
-        Separator(),
-        Button('Generate')
-    ]
-    form = FlexForm('Map Generator', components)
-    form.show()
-
-    if not form.values:
-        return
-
-    values = form.values
-    if not values['gen_normal'] and not values['gen_bump'] and not values['gen_pattern']:
-        forms.alert("No outputs selected. Nothing to generate.", title="Action Cancelled")
-        return
-
-    profile_type = values['profile_type']
-    image_size = 1024
-    default_filename = ""
-    pattern_name = ""
-    spacing = 0.0
-    
     try:
-        if profile_type == 'Corrugated':
-            spacing = float(values['corr_spacing'])
-            height = float(values['corr_height'])
-            default_filename = "Corrugate-{}x{}_normal.png".format(int(spacing), int(height))
-            pattern_name = "Corrugate {}x{}".format(int(spacing), int(height))
-            
-            real_world_dim, repeats = calculate_dimensions(spacing)
-            normal_vector_func = get_corrugated_vector_func(spacing, height, repeats)
-            bump_height_func = get_corrugated_height_func(height, repeats)
-            
-        elif profile_type == 'Trapezoidal':
-            validate_trapezoid_inputs(values)
-            rib_width = float(values['trap_rib_width'])
-            top_width = float(values['trap_top_width'])
-            spacing = float(values['trap_spacing'])
-            height = float(values['trap_height'])
-            default_filename = "Trapezoidal-{}x{}@{}_normal.png".format(int(rib_width), int(height), int(spacing))
-            pattern_name = "Trapezoidal {}x{}@{}".format(int(rib_width), int(height), int(spacing))
+        # --- 1. Get or Create Material ---
+        material = _get_material_by_name(doc, material_name)
+        is_new_material = False
 
-            real_world_dim, repeats = calculate_dimensions(spacing)
-            normal_vector_func = get_trapezoidal_vector_func(rib_width, top_width, spacing, height, repeats)
-            bump_height_func = get_trapezoidal_height_func(rib_width, top_width, spacing, height, repeats)
+        # --- MOVED TRANSACTION TO START ---
+        # All modifications, including material creation, must be inside.
+        with Transaction(
+            "Create/Update Material: " + material_name
+        ) as rvt_transaction:
 
-    except (ValueError, TypeError):
-        ui.forms.Alert("Invalid Input", header="Please ensure all dimension fields contain valid numbers.", exit=True)
-        return
-    except Exception as e:
-        ui.forms.Alert("An unexpected error occurred during setup.", header=str(e), exit=True)
-        return
+            # --- MOVED MATERIAL CREATION INSIDE TRANSACTION ---
+            if not material:
+                material_id = DB.Material.Create(doc, material_name)
+                material = doc.GetElement(material_id)
+                is_new_material = True
 
-    # --- Create Fill Pattern if requested ---
-    pattern_created_msg = ""
-    if values['gen_pattern']:
-        success, reason = create_revit_fill_pattern(revit.doc, pattern_name, spacing)
-        if success:
-            pattern_created_msg = "\n\nFill Pattern '{}' created successfully.".format(pattern_name)
-        else:
-            pattern_created_msg = "\n\nFill Pattern '{}' not created (Reason: {}).".format(pattern_name, reason)
-    
-    # --- Generate and Save Image Files if requested ---
-    saved_files_msg = ""
-    if values['gen_normal'] or values['gen_bump']:
-        save_path = forms.save_file(files_filter='PNG Image (*.png)|*.png',
-                                    title="Save Normal Map Image",
-                                    default_name=default_filename)
-        
-        if save_path:
-            saved_files = []
-            try:
-                # Generate and save Normal Map
-                if values['gen_normal']:
-                    color_row = generate_color_row(image_size, normal_vector_func)
-                    bitmap = create_bitmap_from_row(image_size, color_row)
-                    bitmap.Save(save_path, ImageFormat.Png)
-                    saved_files.append(save_path)
+            # --- 2. Set Graphics Properties ---
+            material.Color = material_color
+            material.SurfaceForegroundPatternId = surface_pattern_element.Id
+            # Set pattern color to black (common for roofing)
+            material.SurfaceForegroundPatternColor = DB.Color(128, 0, 0)
+            material.Transparency = 0
+            material.UseRenderAppearanceForShading = True
 
-                # Generate and save Bump Map
-                if values['gen_bump']:
-                    base, ext = os.path.splitext(save_path)
-                    if base.endswith('_normal'):
-                        bump_path = base.replace('_normal', '_bump') + ext
+            # --- 3. Get or Create Appearance Asset ---
+            appearance_asset_id = material.AppearanceAssetId
+            if appearance_asset_id == DB.ElementId.InvalidElementId:
+                # Material has no appearance, create one
+                appearance_asset_id = _create_new_appearance_asset(
+                    doc, material_name + " Appearance"
+                )
+                if appearance_asset_id != DB.ElementId.InvalidElementId:
+                    material.AppearanceAssetId = appearance_asset_id
+                else:
+                    rvt_transaction.RollBack()
+                    return None, "Failed to create new appearance asset."
+            # return material, "Test" + str(appearance_asset_id)
+
+            appearance_asset_elem = doc.GetElement(appearance_asset_id)
+            rendering_asset = appearance_asset_elem.GetRenderingAsset()
+
+            # --- 4. Edit the Appearance Asset (The Hard Part) ---
+            # We must use an AssetEditScope to modify the asset
+            with DB.Visual.AppearanceAssetEditScope(doc) as edit_scope:
+                # Start editing the asset
+                editable_asset = edit_scope.Start(appearance_asset_elem.Id)
+
+                # --- Find the Bump Map Property ---
+                # This is the "slot" for the bump map
+                # Schema name for bump map on a Generic asset is "Generic.BumpMap"
+                bump_map_prop = editable_asset.FindByName("generic_diffuse")
+
+                # --- Get or Create the Texture Asset (UnifiedBitmap) ---
+                # This is the "texture" that plugs into the slot
+                texture_asset = None
+                try:
+                    texture_asset = bump_map_prop.GetConnectedProperty(0)
+                except:
+                    print("No texture_asset")
+                if not texture_asset:
+                    # No texture, create a new "UnifiedBitmap" asset
+                    # Note: We create this within the same edit scope
+                    texture_asset = DB.Visual.Asset("UnifiedBitmap")
+                    # Connect the new texture asset to the bump map slot
+                    bump_map_prop.Connect(texture_asset)
+
+                # --- Edit the Texture Asset Properties ---
+                if texture_asset:
+                    # 1. Set the file path
+                    # Schema name is "UnifiedBitmap.Source"
+                    source_prop = texture_asset.FindByName(
+                        DB.Visual.UnifiedBitmap.Source
+                    )
+                    if source_prop:
+                        source_prop.Value = bump_map_path
                     else:
-                        bump_path = base + '_bump' + ext
+                        print("Could not find 'UnifiedBitmap.Source' property")
 
-                    color_row = generate_color_row(image_size, bump_height_func)
-                    bitmap = create_bitmap_from_row(image_size, color_row)
-                    bitmap.Save(bump_path, ImageFormat.Png)
-                    saved_files.append(bump_path)
-                
-                if saved_files:
-                    saved_files_msg = "Files saved successfully:\n" + "\n".join(saved_files)
-                    saved_files_msg += "\n\nFor use in the Revit material editor, set the texture map size to:\n"
-                    saved_files_msg += "Width: {:.2f} mm\nHeight: {:.2f} mm".format(real_world_dim, real_world_dim)
+                    # 2. Set Texture Mode to "Real World"
+                    # Schema name is "UnifiedBitmap.WCSMappingType"
+                    mapping_prop = texture_asset.FindByName(
+                        DB.Visual.UnifiedBitmap.WCSMappingType
+                    )
+                    if mapping_prop:
+                        mapping_prop.Value = DB.Visual.WCSMappingType.RealWorld
+                    else:
+                        print("Could not find 'UnifiedBitmap.WCSMappingType' property")
 
-            except Exception as e:
-                ui.forms.Alert(str(e), title="Error Saving File")
-    
-    # --- Show Final Summary ---
-    final_message = (saved_files_msg + pattern_created_msg).strip()
-    if final_message:
-        forms.alert(final_message, title="Generation Complete")
+                    # 3. Set Real World Scale (U = Width, V = Height)
+                    scale_u_prop = texture_asset.FindByName(
+                        DB.Visual.UnifiedBitmap.RealWorldScaleU
+                    )
+                    if scale_u_prop:
+                        scale_u_prop.Value = texture_real_world_width_int  # Internal feet
+                    else:
+                        print("Could not find 'UnifiedBitmap.RealWorldScaleU' property")
+
+                    scale_v_prop = texture_asset.FindByName(
+                        DB.Visual.UnifiedBitmap.RealWorldScaleV
+                    )
+                    if scale_v_prop:
+                        scale_v_prop.Value = texture_real_world_height_int  # Internal feet
+                    else:
+                        print("Could not find 'UnifiedBitmap.RealWorldScaleV' property")
+                        
+                    # 4. Set Offset to 0
+                    offset_u_prop = texture_asset.FindByName(
+                        DB.Visual.UnifiedBitmap.RealWorldOffsetU
+                    )
+                    if offset_u_prop:
+                        offset_u_prop.Value = 0.0
+                        
+                    offset_v_prop = texture_asset.FindByName(
+                        DB.Visual.UnifiedBitmap.RealWorldOffsetV
+                    )
+                    if offset_v_prop:
+                        offset_v_prop.Value = 0.0
+
+                # Commit the changes to the asset
+                edit_scope.Commit(True)
+
+            status_msg = "Material '{}' created.".format(material_name)
+            if not is_new_material:
+                status_msg = "Material '{}' updated.".format(material_name)
+
+            return material, status_msg
+
+    except Exception as e:
+        # --- ADDED FULL TRACEBACK LOGGING ---
+        print("--- ERROR IN create_or_update_material ---")
+        print(traceback.format_exc())
+        print("--- END ERROR ---")
+        return None, "Failed to create/update material: {}".format(e)
 
 
-# Main execution point
-if __name__ == '__main__':
-    show_ui_and_generate()
+# --- TEST HARNESS ---
+# This part only runs if you execute this script directly
+if __name__ == "__main__":
+    doc = revit.doc
+    uidoc = revit.uidoc
 
+    print("Running Material Generator Test...")
 
+    # --- 1. Set Up Test Data ---
+    TEST_MATERIAL_NAME = "Test Roofing Material"
+    TEST_MATERIAL_COLOR = DB.Color(150, 150, 150)
+    TEST_PATTERN_NAME = "Standing Seam 2@8"  # <--- MUST exist in your project
+    TEST_TEXTURE_WIDTH_INT = 2.0  # 2.0 feet
+    TEST_TEXTURE_HEIGHT_INT = 2.0  # 2.0 feet
+
+    # --- 2. Get Test Fill Pattern ---
+    test_pattern = DB.FillPatternElement.GetFillPatternElementByName(
+        doc, DB.FillPatternTarget.Model, TEST_PATTERN_NAME
+    )
+    if not test_pattern:
+        forms.alert(
+            "Test aborted. Please create a Model Fill Pattern named '{}' to run this test.".format(
+                TEST_PATTERN_NAME
+            ),
+            title="Test Setup Error",
+            exitscript=True,
+        )
+
+    # --- 3. Get Test Bump Map ---
+    test_bump_path = r"C:\Users\warwickm\Downloads\Standing Seam-2@8_bump-24in.png"
+    # test_bump_path = forms.pick_file(
+        # file_ext="png",
+        # multi_file=False,
+        # title="Select a PNG file to use as the test bump map",
+    # )
+    if not test_bump_path:
+        forms.alert("Test aborted. No bump map selected.", title="Test Cancelled")
+    else:
+        print("Test Parameters:")
+        print("  Material Name: {}".format(TEST_MATERIAL_NAME))
+        print("  Pattern Name: {}".format(TEST_PATTERN_NAME))
+        print("  Texture Path: {}".format(test_bump_path))
+        print("  Texture Size: {}' x {}'".format(TEST_TEXTURE_WIDTH_INT, TEST_TEXTURE_HEIGHT_INT))
+        
+        # --- 4. Run the Function ---
+        # Added try/except here as well to catch any errors
+        try:
+            # --- FIXED ARGUMENT LIST ---
+            # Was missing: TEST_MATERIAL_COLOR, test_pattern, test_bump_path
+            material, message = create_or_update_material(
+                doc,
+                TEST_MATERIAL_NAME,
+                TEST_MATERIAL_COLOR,
+                test_pattern,
+                test_bump_path,
+                TEST_TEXTURE_WIDTH_INT,
+                TEST_TEXTURE_HEIGHT_INT,
+            )
+        except Exception as e:
+            # --- ADDED FULL TRACEBACK LOGGING ---
+            print("--- ERROR IN TEST HARNESS CALL ---")
+            print(traceback.format_exc())
+            print("--- END ERROR ---")
+            material = None
+            message = "Test harness caught an exception: {}".format(e)
+
+        # --- 5. Report Results ---
+        if material:
+            print(message)
+            forms.alert(message, title="Test Complete")
+            # Select and show the new material in the project browser
+            # uidoc.Selection.SetElementIds(System.Array[DB.ElementId]([material.Id]))
+            # uidoc.ShowElements(material.Id)
+        else:
+            print("Test Failed: {}".format(message))
+            forms.alert(message, title="Test Failed")
+
+    print("Test finished.")
 
 
 
