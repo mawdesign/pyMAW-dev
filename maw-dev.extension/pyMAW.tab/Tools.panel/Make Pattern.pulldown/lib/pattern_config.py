@@ -32,14 +32,17 @@ DEFAULT_TEMPLATES = {
         "corrugated_bump_map": "Corrugate-{spacing}x{height}_bump_{size}mm",
         "corrugated_pattern_name": "Corrugate {spacing}x{height}",
         "corrugated_region_name": "Corrugate {spacing}x{height}",
+        "corrugated_material_name": "Roofing - Corrugate {spacing}x{height}",
         "trapezoidal_normal_map": "Trapezoidal-{rib_width}x{height}@{spacing}_normal_{size}mm",
         "trapezoidal_bump_map": "Trapezoidal-{rib_width}x{height}@{spacing}_bump_{size}mm",
         "trapezoidal_pattern_name": "Trapezoidal {rib_width}x{height}@{spacing}",
         "trapezoidal_region_name": "Trapezoidal {rib_width}x{height}@{spacing}",
-        "ribbed_normal_map": "Ribbed-{thickness}x{height}@{spacing}_normal_{size}mm",
-        "ribbed_bump_map": "Ribbed-{thickness}x{height}@{spacing}_bump_{size}mm",
-        "ribbed_pattern_name": "Ribbed {thickness}x{height}@{spacing}",
-        "ribbed_region_name": "Ribbed {thickness}x{height}@{spacing}",
+        "trapezoidal_material_name": "Roofing - Trapezoidal {rib_width}x{height}@{spacing}",
+        "ribbed_normal_map": "Standing Seam-{thickness}x{height}@{spacing}_normal_{size}mm",
+        "ribbed_bump_map": "Standing Seam-{thickness}x{height}@{spacing}_bump_{size}mm",
+        "ribbed_pattern_name": "Standing Seam {thickness}x{height}@{spacing}",
+        "ribbed_region_name": "Standing Seam {thickness}x{height}@{spacing}",
+        "ribbed_material_name": "Roofing - Standing Seam {thickness}x{height}@{spacing}",
     },
     # Brick Patterns (Placeholder for when you add them)
     "Brick Patterns": {
@@ -59,9 +62,7 @@ def _find_config_path(script_path):
     Returns (path_to_config_file, is_general) or (None, None)
     """
     specific_path = os.path.join(script_path, CONFIG_FILE_NAME)
-    general_path = os.path.abspath(
-        os.path.join(script_path, "..", CONFIG_FILE_NAME)
-    )
+    general_path = os.path.abspath(os.path.join(script_path, "..", CONFIG_FILE_NAME))
 
     if os.path.exists(specific_path):
         return specific_path, False
@@ -96,11 +97,7 @@ def get_template(config, section, key):
     Gets a specific naming template from the config,
     or falls back to the default.
     """
-    if (
-        config
-        and config.has_section(section)
-        and config.has_option(section, key)
-    ):
+    if config and config.has_section(section) and config.has_option(section, key):
         return config.get(section, key)
     else:
         # Fallback to defaults

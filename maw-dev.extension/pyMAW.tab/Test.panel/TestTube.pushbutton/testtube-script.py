@@ -28,29 +28,72 @@ def _get_material_by_name(doc, name):
     return None
 
 
+def _find_generic_asset_template(doc):
+    """
+    Finds a 'Generic' Asset to use as a template for creating
+    new Appearance Assets.
+    Searches Document assets first, then Application (library) assets.
+    (Based on logic from material_tools.py)
+    """
+    # 1. Search Document Assets
+    doc_assets = [
+        elem.GetRenderingAsset()
+        for elem in DB.FilteredElementCollector(doc)
+        .OfClass(DB.AppearanceAssetElement)
+        .ToElements()
+    ]
+    generic_asset_template = next(
+        (
+            a
+            for a in doc_assets
+            if a.FindByName(DB.Visual.Generic.GenericDiffuse)
+        ),
+        None,
+    )
+
+    if generic_asset_template:
+        return generic_asset_template
+
+    # 2. Search Application (Library) Assets
+    app_assets = doc.Application.GetAssets(DB.Visual.AssetType.Appearance)
+    generic_asset_template = next(
+        (
+            a
+            for a in app_assets
+            if a.FindByName(DB.Visual.Generic.GenericDiffuse)
+        ),
+        None,
+    )
+
+    if generic_asset_template:
+        return generic_asset_template
+
+    # 3. Fail
+    return None
+
+
 def _create_new_appearance_asset(doc, asset_name):
     """
-    Creates a new AppearanceAssetElement by duplicating the "Generic" asset.
+    Creates a new AppearanceAssetElement by finding a "Generic" template
+    and using it as a base.
     Returns the ElementId of the new asset.
+    (Based on logic from material_tools.py)
     """
-    # Try to find the default "Generic" asset to duplicate
-    base_asset_elem = None
-    collector = DB.FilteredElementCollector(doc).OfClass(DB.AppearanceAssetElement)
-    for asset_elem in collector:
-        if asset_elem.Name[:7] == "Generic":
-            base_asset_elem = asset_elem
-            break
+    # Find a "Generic" asset to use as a template
+    generic_asset_template = _find_generic_asset_template(doc)
 
-    if not base_asset_elem:
-        # Fallback if "Generic" isn't found (highly unlikely)
-        forms.alert("Could not find 'Generic' appearance asset to duplicate.")
+    if not generic_asset_template:
+        forms.alert("Could not find any 'Generic' appearance asset to duplicate.")
         return DB.ElementId.InvalidElementId
 
     try:
-        new_asset_elem = base_asset_elem.Duplicate(asset_name)
+        # Create the new AppearanceAssetElement
+        new_asset_elem = DB.AppearanceAssetElement.Create(
+            doc, asset_name, generic_asset_template
+        )
         return new_asset_elem.Id
     except Exception as e:
-        print("Error duplicating appearance asset: {}".format(e))
+        print("Error creating new appearance asset: {}".format(e))
         return DB.ElementId.InvalidElementId
 
 
@@ -66,21 +109,11 @@ def create_or_update_material(
     """
     Creates a new material or updates an existing one with graphics
     and appearance properties.
-
-    Args:
-        doc (Document): The active Revit document.
-        material_name (str): The name of the material to create/find.
-        material_color (DB.Color): The base color for graphics.
-        surface_pattern_element (DB.FillPatternElement): The pattern for the
-                                                          graphics surface.
-        bump_map_path (str): Absolute file path to the bump map texture.
-        texture_real_world_width_int (float): Texture width in internal units (feet).
-        texture_real_world_height_int (float): Texture height in internal units (feet).
-
-    Returns:
-        (DB.Material, str): (The material element, status message)
     """
-    if not System.IO.File.Exists(bump_map_path):
+    if (
+        not bump_map_path
+        or not System.IO.File.Exists(bump_map_path)
+    ):
         return None, "Bump map file not found at path: {}".format(bump_map_path)
 
     if not surface_pattern_element:
@@ -91,13 +124,11 @@ def create_or_update_material(
         material = _get_material_by_name(doc, material_name)
         is_new_material = False
 
-        # --- MOVED TRANSACTION TO START ---
         # All modifications, including material creation, must be inside.
         with Transaction(
             "Create/Update Material: " + material_name
         ) as rvt_transaction:
 
-            # --- MOVED MATERIAL CREATION INSIDE TRANSACTION ---
             if not material:
                 material_id = DB.Material.Create(doc, material_name)
                 material = doc.GetElement(material_id)
@@ -107,7 +138,7 @@ def create_or_update_material(
             material.Color = material_color
             material.SurfaceForegroundPatternId = surface_pattern_element.Id
             # Set pattern color to black (common for roofing)
-            material.SurfaceForegroundPatternColor = DB.Color(128, 0, 0)
+            material.SurfaceForegroundPatternColor = DB.Color(0, 0, 0)
             material.Transparency = 0
             material.UseRenderAppearanceForShading = True
 
@@ -123,87 +154,167 @@ def create_or_update_material(
                 else:
                     rvt_transaction.RollBack()
                     return None, "Failed to create new appearance asset."
-            # return material, "Test" + str(appearance_asset_id)
 
             appearance_asset_elem = doc.GetElement(appearance_asset_id)
             rendering_asset = appearance_asset_elem.GetRenderingAsset()
 
             # --- 4. Edit the Appearance Asset (The Hard Part) ---
-            # We must use an AssetEditScope to modify the asset
             with DB.Visual.AppearanceAssetEditScope(doc) as edit_scope:
                 # Start editing the asset
-                editable_asset = edit_scope.Start(appearance_asset_elem.Id)
+                editable_asset = edit_scope.Start(appearance_asset_id)
+
+                # --- ADDED: Reset properties to default (from ref file) ---
+                prop_bool = editable_asset.FindByName(
+                    DB.Visual.Generic.CommonTintToggle
+                )
+                if prop_bool:
+                    prop_bool.Value = True
+
+                prop_bool = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericIsMetal
+                )
+                if prop_bool:
+                    prop_bool.Value = False
+
+                prop_double = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericDiffuseImageFade
+                )
+                if prop_double and prop_double.IsEditable:
+                    prop_double.Value = 0.0
+
+                prop_double = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericTransparency
+                )
+                if prop_double and prop_double.IsEditable:
+                    prop_double.Value = 0.0
+
+                prop_double = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericGlossiness
+                )
+                if prop_double and prop_double.IsEditable:
+                    prop_double.Value = 0.1
+
+                prop_double = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericReflectivityAt0deg
+                )
+                if prop_double and prop_double.IsEditable:
+                    prop_double.Value = 0.1
+
+                prop_double = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericReflectivityAt90deg
+                )
+                if prop_double and prop_double.IsEditable:
+                    prop_double.Value = 0.0
+
+                prop_color = editable_asset.FindByName(
+                    DB.Visual.Generic.CommonTintColor
+                )
+                if prop_color:
+                    prop_color.SetValueAsColor(DB.Color(127, 127, 127))
+
+                prop_color = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericDiffuse
+                )
+                if prop_color:
+                    prop_color.SetValueAsDoubles([0.95, 0.95, 0.9, 1.0])
+                    connected_color_asset = prop_color.GetSingleConnectedAsset()
+                    if connected_color_asset:
+                        # Find the target asset path property
+                        color_bitmap_property = connected_color_asset.FindByName(DB.Visual.UnifiedBitmap.UnifiedbitmapBitmap) # AssetPropertyString
+                        # ensure no image from copied material asset
+                        if color_bitmap_property:
+                            color_bitmap_property.Value = ""
 
                 # --- Find the Bump Map Property ---
-                # This is the "slot" for the bump map
-                # Schema name for bump map on a Generic asset is "Generic.BumpMap"
-                bump_map_prop = editable_asset.FindByName("generic_diffuse")
-
+                bump_map_prop = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericBumpMap
+                )
+                if not bump_map_prop:
+                    print("Could not find 'Generic.BumpMap' property")
+                    edit_scope.Cancel()
+                    return None, "Could not find 'Generic.BumpMap' property"
+                    
                 # --- Get or Create the Texture Asset (UnifiedBitmap) ---
-                # This is the "texture" that plugs into the slot
                 texture_asset = None
-                try:
-                    texture_asset = bump_map_prop.GetConnectedProperty(0)
-                except:
-                    print("No texture_asset")
-                if not texture_asset:
-                    # No texture, create a new "UnifiedBitmap" asset
-                    # Note: We create this within the same edit scope
-                    texture_asset = DB.Visual.Asset("UnifiedBitmap")
-                    # Connect the new texture asset to the bump map slot
-                    bump_map_prop.Connect(texture_asset)
+                if bump_map_prop.GetSingleConnectedAsset():
+                    texture_asset = bump_map_prop.GetSingleConnectedAsset()
+                else:
+                    # Create and connect a new UnifiedBitmap
+                    bump_map_prop.AddConnectedAsset(
+                        DB.Visual.UnifiedBitmap.__name__
+                    )
+                    texture_asset = bump_map_prop.GetSingleConnectedAsset()
 
-                # --- Edit the Texture Asset Properties ---
+                # --- Edit the Texture Asset Properties (Merged Logic) ---
                 if texture_asset:
-                    # 1. Set the file path
-                    # Schema name is "UnifiedBitmap.Source"
+                    # 1. Set the file path (from reference file)
                     source_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.Source
+                        DB.Visual.UnifiedBitmap.UnifiedbitmapBitmap
                     )
                     if source_prop:
-                        source_prop.Value = bump_map_path
+                        if source_prop.IsValidValue(bump_map_path):
+                            source_prop.Value = bump_map_path
+                        else:
+                            print(
+                                "Warning: Invalid value for bump map path: {}".format(
+                                    bump_map_path
+                                )
+                            )
                     else:
-                        print("Could not find 'UnifiedBitmap.Source' property")
+                        print(
+                            "Could not find 'UnifiedBitmap.UnifiedbitmapBitmap' property"
+                        )
 
-                    # 2. Set Texture Mode to "Real World"
-                    # Schema name is "UnifiedBitmap.WCSMappingType"
-                    mapping_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.WCSMappingType
-                    )
-                    if mapping_prop:
-                        mapping_prop.Value = DB.Visual.WCSMappingType.RealWorld
-                    else:
-                        print("Could not find 'UnifiedBitmap.WCSMappingType' property")
+                    # # 2. Set Texture Mode to "Real World"
+                    # mapping_prop = texture_asset.FindByName(
+                        # DB.Visual.UnifiedBitmap.WCSMappingType
+                    # )
+                    # if mapping_prop:
+                        # mapping_prop.Value = DB.Visual.WCSMappingType.RealWorld
+                    # else:
+                        # print(
+                            # "Could not find 'UnifiedBitmap.WCSMappingType' property"
+                        # )
 
                     # 3. Set Real World Scale (U = Width, V = Height)
                     scale_u_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.RealWorldScaleU
+                        DB.Visual.UnifiedBitmap.TextureRealWorldScaleX
                     )
                     if scale_u_prop:
-                        scale_u_prop.Value = texture_real_world_width_int  # Internal feet
+                        scale_u_prop.Value = (
+                            texture_real_world_width_int * 12 # image scale seems to be in inches?
+                        )
                     else:
-                        print("Could not find 'UnifiedBitmap.RealWorldScaleU' property")
+                        print(
+                            "Could not find 'UnifiedBitmap.RealWorldScaleU' property"
+                        )
 
                     scale_v_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.RealWorldScaleV
+                        DB.Visual.UnifiedBitmap.TextureRealWorldScaleY
                     )
                     if scale_v_prop:
-                        scale_v_prop.Value = texture_real_world_height_int  # Internal feet
+                        scale_v_prop.Value = (
+                            texture_real_world_height_int * 12 # image scale seems to be in inches?
+                        )
                     else:
-                        print("Could not find 'UnifiedBitmap.RealWorldScaleV' property")
-                        
+                        print(
+                            "Could not find 'UnifiedBitmap.RealWorldScaleV' property"
+                        )
+
                     # 4. Set Offset to 0
                     offset_u_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.RealWorldOffsetU
+                        DB.Visual.UnifiedBitmap.TextureRealWorldOffsetX
                     )
                     if offset_u_prop:
                         offset_u_prop.Value = 0.0
-                        
+
                     offset_v_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.RealWorldOffsetV
+                        DB.Visual.UnifiedBitmap.TextureRealWorldOffsetY
                     )
                     if offset_v_prop:
                         offset_v_prop.Value = 0.0
+                else:
+                    print("Could not create or find connected texture asset.")
 
                 # Commit the changes to the asset
                 edit_scope.Commit(True)
@@ -233,7 +344,7 @@ if __name__ == "__main__":
     # --- 1. Set Up Test Data ---
     TEST_MATERIAL_NAME = "Test Roofing Material"
     TEST_MATERIAL_COLOR = DB.Color(150, 150, 150)
-    TEST_PATTERN_NAME = "Standing Seam 2@8"  # <--- MUST exist in your project
+    TEST_PATTERN_NAME = "Vertical"  # <--- MUST exist in your project
     TEST_TEXTURE_WIDTH_INT = 2.0  # 2.0 feet
     TEST_TEXTURE_HEIGHT_INT = 2.0  # 2.0 feet
 
@@ -251,12 +362,12 @@ if __name__ == "__main__":
         )
 
     # --- 3. Get Test Bump Map ---
-    test_bump_path = r"C:\Users\warwickm\Downloads\Standing Seam-2@8_bump-24in.png"
     # test_bump_path = forms.pick_file(
         # file_ext="png",
         # multi_file=False,
         # title="Select a PNG file to use as the test bump map",
     # )
+    test_bump_path = r"C:\Users\warwickm\Downloads\Standing Seam-2@8_bump-24in.png"
     if not test_bump_path:
         forms.alert("Test aborted. No bump map selected.", title="Test Cancelled")
     else:
@@ -264,13 +375,16 @@ if __name__ == "__main__":
         print("  Material Name: {}".format(TEST_MATERIAL_NAME))
         print("  Pattern Name: {}".format(TEST_PATTERN_NAME))
         print("  Texture Path: {}".format(test_bump_path))
-        print("  Texture Size: {}' x {}'".format(TEST_TEXTURE_WIDTH_INT, TEST_TEXTURE_HEIGHT_INT))
-        
+        print(
+            "  Texture Size: {}' x {}'".format(
+                TEST_TEXTURE_WIDTH_INT, TEST_TEXTURE_HEIGHT_INT
+            )
+        )
+
         # --- 4. Run the Function ---
         # Added try/except here as well to catch any errors
         try:
             # --- FIXED ARGUMENT LIST ---
-            # Was missing: TEST_MATERIAL_COLOR, test_pattern, test_bump_path
             material, message = create_or_update_material(
                 doc,
                 TEST_MATERIAL_NAME,
@@ -293,14 +407,15 @@ if __name__ == "__main__":
             print(message)
             forms.alert(message, title="Test Complete")
             # Select and show the new material in the project browser
-            # uidoc.Selection.SetElementIds(System.Array[DB.ElementId]([material.Id]))
-            # uidoc.ShowElements(material.Id)
+            uidoc.Selection.SetElementIds(
+                System.Array[DB.ElementId]([material.Id])
+            )
+            uidoc.ShowElements(material.Id)
         else:
             print("Test Failed: {}".format(message))
             forms.alert(message, title="Test Failed")
 
     print("Test finished.")
-
 
 
 ### END HERE

@@ -1,7 +1,11 @@
+# -*- coding: utf-8 -*-
+# WORKING_PATH = r"C:\Users\warwickm\Downloads"
 # region Imports
 import os
 import json
 import clr
+import traceback
+import io
 from collections import OrderedDict
 
 # Add Revit API references
@@ -112,11 +116,11 @@ def get_revit_appearance_assets(doc, app):
 
     # finalize the log files
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
+        with io.open(log_file_path, 'w', encoding='utf-8') as f:
             f.writelines(log_lines)
         print("Text log written to: {}".format(log_file_path))
 
-        with open(json_file_path, 'w', encoding='utf-8') as f:
+        with io.open(json_file_path, 'w', encoding='utf-8') as f:
             json.dump(json_output, f, indent=4)
         print("JSON log written to: {}".format(json_file_path))
 
@@ -339,11 +343,11 @@ def get_doc_material_assets(doc, include_parameters=True):
 
     # finalize the log files
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
+        with io.open(log_file_path, 'w', encoding='utf-8') as f:
             f.writelines(log_lines)
         print("Text log written to: {}".format(log_file_path))
 
-        with open(json_file_path, 'w', encoding='utf-8') as f:
+        with io.open(json_file_path, 'w', encoding='utf-8') as f:
             json.dump(json_output, f, indent=4)
         print("JSON log written to: {}".format(json_file_path))
             
@@ -419,11 +423,11 @@ def get_doc_materials(doc, include_parameters=True):
 
     # finalize the log files
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
+        with io.open(log_file_path, 'w', encoding='utf-8') as f:
             f.writelines(log_lines)
         print("Text log written to: {}".format(log_file_path))
 
-        with open(json_file_path, 'w', encoding='utf-8') as f:
+        with io.open(json_file_path, 'w', encoding='utf-8') as f:
             json.dump(json_output, f, indent=4)
         print("JSON log written to: {}".format(json_file_path))
 
@@ -612,6 +616,7 @@ def create_simple_material(doc, create_report=True):
 
     # now we're ready to create our new material in the document, so we start a transaction
     this_material = None
+    this_trans = None # Define trans here to check in except block
     
     try:
         with DB.Transaction(doc, "Create new material") as this_trans:
@@ -647,7 +652,7 @@ def create_simple_material(doc, create_report=True):
             # error checking for existence of name
             name_str = _generate_name("_My Model Pattern ", dict_pat.keys())
             model_pat_def = DB.FillPattern(name_str, DB.FillPatternTarget.Model,
-                                         DB.FillPatternHostOrientation.ToHost, 0, 2, 2)
+                                         DB.FillPatternHostOrientation.ToHost, 0, 2.0, 2.0)
             model_pat = DB.FillPatternElement.Create(doc, model_pat_def)
             this_material.SurfaceForegroundPatternId = model_pat.Id
             
@@ -655,7 +660,7 @@ def create_simple_material(doc, create_report=True):
             # error checking for existence of name
             name_str = _generate_name("_My Drafting Pattern", dict_pat.keys())
             draft_pat_def = DB.FillPattern(name_str, DB.FillPatternTarget.Drafting,
-                                         DB.FillPatternHostOrientation.ToHost, 0, 1 / 12, 1 / 12)
+                                         DB.FillPatternHostOrientation.ToHost, 0, 1.0 / 12, 1.0 / 12)
             draft_pat = DB.FillPatternElement.Create(doc, draft_pat_def)
             this_material.CutForegroundPatternId = draft_pat.Id
             
@@ -730,8 +735,8 @@ def create_simple_material(doc, create_report=True):
                 str_property = editable_asset.FindByName(RDV.SchemaCommon.Category) # AssetPropertyString
                 # IsReadOnly failed to catch this call
                 # IsEditable caught it and correctly skipped it
-                if str_property and str_property.IsEditable:
-                    str_property.Value = ":Generic:Custom:Concrete"
+                # if str_property and str_property.IsEditable:
+                #    str_property.Value = ":Generic:Custom:Concrete"
                 
                 # ** set a few specific Generic Schema Properties (since we have no idea what we started with)
                 boolean_property = editable_asset.FindByName(RDV.Generic.CommonTintToggle) # AssetPropertyBoolean
@@ -792,7 +797,7 @@ def create_simple_material(doc, create_report=True):
                         # Find the target asset path property
                         diffuse_bitmap_property = connected_diff_asset.FindByName(RDV.UnifiedBitmap.UnifiedbitmapBitmap) # AssetPropertyString
                         # build a path to an image
-                        image_path = os.path.join(WORKING_PATH, "Concrete.Cast-In-Place.Exposed Aggregate.Medium.jpg")
+                        image_path = os.path.join(WORKING_PATH, "Standing Seam-2@8_normal-24in.png")
                         if not os.path.exists(image_path):
                             print("Warning: Diffuse image not found at: {}".format(image_path))
                         elif diffuse_bitmap_property and diffuse_bitmap_property.IsValidValue(image_path):
@@ -815,7 +820,7 @@ def create_simple_material(doc, create_report=True):
                         # Find the target asset path property
                         bumpmap_bitmap_property = connected_bump_asset.FindByName(RDV.UnifiedBitmap.UnifiedbitmapBitmap) # AssetPropertyString
                         # build a path to an image
-                        image_path = os.path.join(WORKING_PATH, "Concrete.Cast-In-Place.Exposed Aggregate.Medium.bump.jpg")
+                        image_path = os.path.join(WORKING_PATH, "Standing Seam-2@8_bump-24in.png")
                         if not os.path.exists(image_path):
                             print("Warning: Bump image not found at: {}".format(image_path))
                         elif bumpmap_bitmap_property and bumpmap_bitmap_property.IsValidValue(image_path):
@@ -879,8 +884,10 @@ def create_simple_material(doc, create_report=True):
 
     except Exception as e:
         print("Error during material creation transaction: {}".format(e))
-        if this_trans.HasStarted():
+        print(traceback.format_exc()) # Print detailed traceback
+        if this_trans and this_trans.HasStarted() and this_trans.GetStatus() == DB.TransactionStatus.Started:
             this_trans.RollBack()
+            print("Transaction rolled back.")
         return
 
     # region Log the resulting Material
@@ -904,11 +911,11 @@ def create_simple_material(doc, create_report=True):
 
         # finalize the log files
         try:
-            with open(log_file_path, 'w', encoding='utf-8') as f:
+            with io.open(log_file_path, 'w', encoding='utf-8') as f:
                 f.writelines(log_lines)
             print("Text report written to: {}".format(log_file_path))
 
-            with open(json_file_path, 'w', encoding='utf-8') as f:
+            with io.open(json_file_path, 'w', encoding='utf-8') as f:
                 json.dump(json_output, f, indent=4)
             print("JSON report written to: {}".format(json_file_path))
                 
@@ -922,6 +929,28 @@ def create_simple_material(doc, create_report=True):
 # #############################################################################
 # Helper Functions (Translated)
 # #############################################################################
+
+
+def to_unicode(value):
+    """
+    Safely converts a value to unicode, handling potential errors.
+    This is for Python 2.7 (IronPython) compatibility.
+    """
+    try:
+        if isinstance(value, unicode):
+            return value
+        if isinstance(value, (str, bytes)):
+            return value.decode('utf-8')
+        return unicode(value)
+    except UnicodeError:
+        # Fallback for strings with unknown encoding
+        try:
+            return value.decode('windows-1252')
+        except Exception:
+             return u"[Encoding Error]"
+    except Exception as e:
+        return u"[Conversion Error: {}]".format(e)
+
 
 def _get_material_info(doc, this_mat, log_lines, indent=0, include_parameters=False):
     """
@@ -1734,6 +1763,10 @@ if __name__ == "__main__":
     # get_doc_materials(doc, include_parameters=True)
     
     print("\nRunning Create Simple Material...")
-    create_simple_material(doc, create_report=True)
+    try:
+        create_simple_material(doc, create_report=True)
+    except Exception as e:
+        print("An error occurred running create_simple_material:")
+        print(traceback.format_exc())
 
     print("\n--- Material Tools Script Finished ---")

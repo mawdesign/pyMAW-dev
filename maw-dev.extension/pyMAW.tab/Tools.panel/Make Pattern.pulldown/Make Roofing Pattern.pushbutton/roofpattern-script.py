@@ -4,7 +4,8 @@ Normal and Bump Map Generator for Corrugated, Trapezoidal, and Ribbed Profiles (
 
 This script uses a WPF/XAML interface.
 It uses the .NET System.Drawing library for image generation.
-It can also create a corresponding Revit Model Fill Pattern and Filled Region Type.
+It can also create a corresponding Revit Model Fill Pattern, Filled Region Type,
+and Revit Material.
 """
 
 # pyRevit Imports
@@ -17,8 +18,9 @@ import sys
 import os
 from math import pi, cos, sin, ceil, sqrt
 
-# Import Shared Config Library
+# Import Shared Config/Material Libraries
 import pattern_config
+import pattern_material
 
 # .NET Imports
 import clr
@@ -31,6 +33,7 @@ clr.AddReference("PresentationFramework")
 from System.Windows import Window
 from System import Uri
 from System.Windows.Media.Imaging import BitmapImage
+from System.Windows.Media import SolidColorBrush, Color as MediaColor
 
 # Get the directory of the currently running script
 PATH_SCRIPT = script.get_script_path()
@@ -39,6 +42,39 @@ IS_METRIC = CONFIG.get_option("Metric", True)
 
 
 # --- CONVERSION FUNCTIONS ---
+
+
+def db_color_to_wpf_brush(db_color):
+    """Converts an Autodesk.Revit.DB.Color to a WPF.Media.Brush."""
+    if not db_color or not db_color.IsValid:
+        # Default to gray if invalid
+        return SolidColorBrush(MediaColor.FromRgb(192, 192, 192))
+    return SolidColorBrush(
+        MediaColor.FromRgb(db_color.Red, db_color.Green, db_color.Blue)
+    )
+
+
+def db_color_from_hex(hex_color_string):
+    """
+    Converts a hex color string (e.g., '#FF0000' or 'FF0000') to a DB.Color object.
+    """
+    # Remove the '#' if it exists
+    if hex_color_string.startswith("#"):
+        hex_color_string = hex_color_string[1:]
+
+    # Ensure the string is the correct length
+    if len(hex_color_string) == 8:
+        hex_color_string = hex_color_string[2:]  # remove alpha
+    elif len(hex_color_string) != 6:
+        raise ValueError("Invalid hex color string length. Expected 6 characters.")
+
+    # Extract R, G, B components and convert them to integers
+    r = int(hex_color_string[0:2], 16)
+    g = int(hex_color_string[2:4], 16)
+    b = int(hex_color_string[4:6], 16)
+
+    # Create and return the DB.Color object
+    return DB.Color(r, g, b)
 
 
 def dim_from_string(dim_as_string):
@@ -483,6 +519,17 @@ class RoofingForm(Window):
         self.ImperialRadioButton.IsChecked = not IS_METRIC
         self._update_ui_for_units()
 
+        # Load material color from pyRevit config
+        # Get hex, default to "not set"
+        color_ini = CONFIG.get_option("MaterialColor", "not set")
+        if color_ini != "not set":
+            self.material_color = db_color_from_hex(color_ini)
+        else:
+            self.material_color = db_color_from_hex("#D4D2C8")  # Default pastel grey
+
+        # Set color swatch background
+        self.ColorSwatch.Background = db_color_to_wpf_brush(self.material_color)
+
         # Load image assets (Icons and Diagrams)
         # Assumes images are in the same folder as the script
         try:
@@ -547,6 +594,17 @@ class RoofingForm(Window):
         """Fires when Metric or Imperial radio buttons are clicked."""
         self._update_ui_for_units()
 
+    def SelectColor_Click(self, sender, e):
+        """Fires when the material color swatch is clicked."""
+        # Open the pyRevit color selection dialog
+        new_color = forms.ask_for_color(default="#FFD4D2C8")
+        if new_color:
+            db_color = db_color_from_hex(new_color)
+            if db_color and db_color.IsValid:
+                self.material_color = db_color
+                # Update the swatch background
+                self.ColorSwatch.Background = db_color_to_wpf_brush(db_color)
+
     def RoofType_Changed(self, sender, e):
         """Hides and shows input fields based on roof type selection."""
 
@@ -566,8 +624,8 @@ class RoofingForm(Window):
         if profile_type == "Corrugated":
             self.CorrugatedInputs.Visibility = System.Windows.Visibility.Visible
             self.DiagramImage.Source = self.corrugated_diagram
-            self.SpacingInput.Text = "76" if IS_METRIC else "3"
-            self.CorrugatedHeightInput.Text = "20" if IS_METRIC else "0.75"
+            self.SpacingInput.Text = "76" if IS_METRIC else "2 2/3"
+            self.CorrugatedHeightInput.Text = "20" if IS_METRIC else "7/8"
 
         elif profile_type == "Trapezoidal":
             self.TrapezoidalInputs.Visibility = System.Windows.Visibility.Visible
@@ -602,8 +660,28 @@ class RoofingForm(Window):
         gen_bump = self.CheckBump.IsChecked
         gen_pattern = self.CheckPattern.IsChecked
         gen_fillregion = self.CheckFillRegion.IsChecked
+        gen_material = self.CheckMaterial.IsChecked
 
-        if not gen_normal and not gen_bump and not gen_pattern and not gen_fillregion:
+        # Save material color to config
+        if self.material_color and self.material_color.IsValid:
+            # color_value = "#{:02X}{:02X}{:02X}".format(self.material_color.Red,self.material_color.Green,self.material_color.Blue)
+            r = self.material_color.Red
+            g = self.material_color.Green
+            b = self.material_color.Blue
+
+            # Use the reliable '%' formatting style
+            color_value = "#%02X%02X%02X" % (r, g, b)
+            if color_value != CONFIG.get_option("MaterialColor", "not set"):
+                CONFIG.set_option("MaterialColor", color_value)
+                script.save_config()
+
+        if (
+            not gen_normal
+            and not gen_bump
+            and not gen_pattern
+            and not gen_fillregion
+            and not gen_material
+        ):
             forms.alert(
                 "No outputs selected. Nothing to generate.", title="Action Cancelled"
             )
@@ -624,6 +702,7 @@ class RoofingForm(Window):
         image_size = 1024
         normal_vector_func = None
         bump_height_func = None
+        bump_path_for_material = None
 
         # These store Revit's internal unit (decimal feet)
         (
@@ -732,6 +811,9 @@ class RoofingForm(Window):
             region_name_template = pattern_config.get_template(
                 config, CONFIG_SECTION, key_suffix + "_region_name"
             )
+            material_name_template = pattern_config.get_template(
+                config, CONFIG_SECTION, key_suffix + "_material_name"
+            )
             normal_map_template = pattern_config.get_template(
                 config, CONFIG_SECTION, key_suffix + "_normal_map"
             )
@@ -742,6 +824,7 @@ class RoofingForm(Window):
             # --- Format Names ---
             pattern_name = pattern_name_template.format(**pattern_values_display)
             filled_region_name = region_name_template.format(**pattern_values_display)
+            material_name = material_name_template.format(**pattern_values_display)
 
             # --- Determine default filename for save dialog ---
             default_filename = ""
@@ -780,7 +863,7 @@ class RoofingForm(Window):
         fill_region_created_msg = ""
         pattern_element = None
 
-        if gen_pattern or gen_fillregion:
+        if gen_pattern or gen_fillregion or gen_material:
             pattern_values_int = {
                 "spacing": spacing_int,
                 "height": height_int,
@@ -867,6 +950,9 @@ class RoofingForm(Window):
                             # Only bump selected: use the path from save dialog
                             bump_path = save_path
 
+                        # Store this path for the material function
+                        bump_path_for_material = bump_path
+
                     # --- Save Normal Map ---
                     if gen_normal and normal_path:
                         color_row = generate_color_row(image_size, normal_vector_func)
@@ -895,9 +981,36 @@ class RoofingForm(Window):
                 except Exception as e:
                     forms.alert(str(e), title="Error Saving File")
 
+        # --- Create Material if requested ---
+        material_created_msg = ""
+        if gen_material:
+            if not bump_path_for_material:
+                material_created_msg = "\n\nMaterial creation skipped: 'Generate Bump Map' must be selected and a file saved."
+            elif not pattern_element:
+                material_created_msg = "\n\nMaterial creation skipped: Fill Pattern '{}' could not be found or created.".format(
+                    pattern_name
+                )
+            else:
+                material, message = pattern_material.create_or_update_material(
+                    revit.doc,
+                    material_name,
+                    self.material_color,
+                    pattern_element,
+                    bump_path_for_material,
+                    real_world_dim_int,  # Pass texture size in decimal feet
+                    real_world_dim_int,  # Pass texture size in decimal feet
+                )
+                if material:
+                    material_created_msg = "\n\n" + message
+                else:
+                    material_created_msg = "\n\nMaterial creation failed: " + message
+
         # --- Show Final Summary ---
         final_message = (
-            saved_files_msg + pattern_created_msg + fill_region_created_msg
+            saved_files_msg
+            + pattern_created_msg
+            + fill_region_created_msg
+            + material_created_msg
         ).strip()
         if final_message:
             forms.alert(final_message, title="Generation Complete")

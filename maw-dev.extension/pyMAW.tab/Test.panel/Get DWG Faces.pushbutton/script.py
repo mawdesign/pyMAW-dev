@@ -1,9 +1,11 @@
+# -*- coding: utf-8 -*-
 # WORKING_PATH = r"C:\Users\warwickm\Downloads"
 # region Imports
 import os
 import json
 import clr
 import traceback
+import io
 from collections import OrderedDict
 
 # Add Revit API references
@@ -114,11 +116,11 @@ def get_revit_appearance_assets(doc, app):
 
     # finalize the log files
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
+        with io.open(log_file_path, 'w', encoding='utf-8') as f:
             f.writelines(log_lines)
         print("Text log written to: {}".format(log_file_path))
 
-        with open(json_file_path, 'w', encoding='utf-8') as f:
+        with io.open(json_file_path, 'w', encoding='utf-8') as f:
             json.dump(json_output, f, indent=4)
         print("JSON log written to: {}".format(json_file_path))
 
@@ -341,11 +343,11 @@ def get_doc_material_assets(doc, include_parameters=True):
 
     # finalize the log files
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
+        with io.open(log_file_path, 'w', encoding='utf-8') as f:
             f.writelines(log_lines)
         print("Text log written to: {}".format(log_file_path))
 
-        with open(json_file_path, 'w', encoding='utf-8') as f:
+        with io.open(json_file_path, 'w', encoding='utf-8') as f:
             json.dump(json_output, f, indent=4)
         print("JSON log written to: {}".format(json_file_path))
             
@@ -421,11 +423,11 @@ def get_doc_materials(doc, include_parameters=True):
 
     # finalize the log files
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
+        with io.open(log_file_path, 'w', encoding='utf-8') as f:
             f.writelines(log_lines)
         print("Text log written to: {}".format(log_file_path))
 
-        with open(json_file_path, 'w', encoding='utf-8') as f:
+        with io.open(json_file_path, 'w', encoding='utf-8') as f:
             json.dump(json_output, f, indent=4)
         print("JSON log written to: {}".format(json_file_path))
 
@@ -734,17 +736,17 @@ def create_simple_material(doc, create_report=True):
                 # IsReadOnly failed to catch this call
                 # IsEditable caught it and correctly skipped it
                 # if str_property and str_property.IsEditable:
-                    # str_property.Value = ":Generic:Custom:Concrete"
+                #    str_property.Value = ":Generic:Custom:Concrete"
                 
                 # ** set a few specific Generic Schema Properties (since we have no idea what we started with)
                 boolean_property = editable_asset.FindByName(RDV.Generic.CommonTintToggle) # AssetPropertyBoolean
                 if boolean_property: boolean_property.Value = True
                 
                 boolean_property = editable_asset.FindByName(RDV.Generic.GenericIsMetal) # AssetPropertyBoolean
-                if boolean_property: boolean_property.Value = True
+                if boolean_property: boolean_property.Value = False
 
                 double_property = editable_asset.FindByName(RDV.Generic.GenericDiffuseImageFade) # AssetPropertyDouble
-                if double_property and double_property.IsEditable and double_property.IsValidValue(0.7):
+                if double_property and double_property.IsEditable and double_property.IsValidValue(0.5):
                     double_property.Value = 0.5
                     
                 double_property = editable_asset.FindByName(RDV.Generic.GenericTransparency) # AssetPropertyDouble
@@ -760,17 +762,17 @@ def create_simple_material(doc, create_report=True):
                     double_property.Value = 0.1
                     
                 double_property = editable_asset.FindByName(RDV.Generic.GenericReflectivityAt90deg) # AssetPropertyDouble
-                if double_property and double_property.IsEditable and double_property.IsValidValue(0.2):
+                if double_property and double_property.IsEditable and double_property.IsValidValue(0):
                     double_property.Value = 0
 
                 # let's try a more complex method for the more complicated Properties
                 color_property = editable_asset.FindByName(RDV.Generic.CommonTintColor) # AssetPropertyDoubleArray4d
                 # set the value as a color:
-                if color_property: color_property.SetValueAsColor(DB.Color(127, 63, 63))
+                if color_property: color_property.SetValueAsColor(DB.Color(127, 127, 127))
                 
                 color_property = editable_asset.FindByName(RDV.Generic.GenericDiffuse) # AssetPropertyDoubleArray4d
                 # another method is set the value as a list of doubles
-                if color_property: color_property.SetValueAsDoubles([0.5, 0.25, 0.35, 1.0])
+                if color_property: color_property.SetValueAsDoubles([0.5, 0.5, 0.5, 1.0])
                 # endregion
 
                 # let's attach some images
@@ -795,7 +797,7 @@ def create_simple_material(doc, create_report=True):
                         # Find the target asset path property
                         diffuse_bitmap_property = connected_diff_asset.FindByName(RDV.UnifiedBitmap.UnifiedbitmapBitmap) # AssetPropertyString
                         # build a path to an image
-                        image_path = os.path.join(WORKING_PATH, "Standing Seam-50@200_normal-600mm.png")
+                        image_path = os.path.join(WORKING_PATH, "Concrete.Cast-In-Place.Exposed Aggregate.Medium.jpg")
                         if not os.path.exists(image_path):
                             print("Warning: Diffuse image not found at: {}".format(image_path))
                         elif diffuse_bitmap_property and diffuse_bitmap_property.IsValidValue(image_path):
@@ -818,7 +820,7 @@ def create_simple_material(doc, create_report=True):
                         # Find the target asset path property
                         bumpmap_bitmap_property = connected_bump_asset.FindByName(RDV.UnifiedBitmap.UnifiedbitmapBitmap) # AssetPropertyString
                         # build a path to an image
-                        image_path = os.path.join(WORKING_PATH, "Standing Seam-50@200_bump-600mm.png")
+                        image_path = os.path.join(WORKING_PATH, "Concrete.Cast-In-Place.Exposed Aggregate.Medium.bump.jpg")
                         if not os.path.exists(image_path):
                             print("Warning: Bump image not found at: {}".format(image_path))
                         elif bumpmap_bitmap_property and bumpmap_bitmap_property.IsValidValue(image_path):
@@ -909,11 +911,11 @@ def create_simple_material(doc, create_report=True):
 
         # finalize the log files
         try:
-            with open(log_file_path, 'w', encoding='utf-8') as f:
+            with io.open(log_file_path, 'w', encoding='utf-8') as f:
                 f.writelines(log_lines)
             print("Text report written to: {}".format(log_file_path))
 
-            with open(json_file_path, 'w', encoding='utf-8') as f:
+            with io.open(json_file_path, 'w', encoding='utf-8') as f:
                 json.dump(json_output, f, indent=4)
             print("JSON report written to: {}".format(json_file_path))
                 
@@ -1746,8 +1748,6 @@ if __name__ == "__main__":
         print(traceback.format_exc())
 
     print("\n--- Material Tools Script Finished ---")
-
-
 
 
 

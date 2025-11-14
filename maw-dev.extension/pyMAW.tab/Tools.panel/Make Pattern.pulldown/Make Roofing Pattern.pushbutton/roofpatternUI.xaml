@@ -137,6 +137,19 @@
                 <CheckBox Name="CheckBump" Content="Generate Bump Map" IsChecked="True" Margin="0,0,0,8" />
                 <CheckBox Name="CheckPattern" Content="Create Revit Model Fill Pattern" IsChecked="False" Margin="0,0,0,8" />
                 <CheckBox Name="CheckFillRegion" Content="Create Revit Filled Region Type" IsChecked="False" Margin="0,0,0,8" />
+                <CheckBox Name="CheckMaterial" Content="Create Revit Material" IsChecked="False" Margin="0,0,0,0" />
+                <Grid Margin="0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Material Shading Color:" FontWeight="Normal" VerticalAlignment="Center" />
+                    <Button Name="ColorSwatch"
+                            Grid.Column="1"
+                            Width="60" Height="25"
+                            Click="SelectColor_Click"
+                            BorderBrush="Black" BorderThickness="1" />
+                </Grid>
             </StackPanel>
         </GroupBox>
 
