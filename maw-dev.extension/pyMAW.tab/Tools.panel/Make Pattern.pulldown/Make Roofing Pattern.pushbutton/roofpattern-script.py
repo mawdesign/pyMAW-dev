@@ -38,7 +38,7 @@ from System.Windows.Media import SolidColorBrush, Color as MediaColor
 # Get the directory of the currently running script
 PATH_SCRIPT = script.get_script_path()
 CONFIG = script.get_config("patterns")
-IS_METRIC = CONFIG.get_option("Metric", True)
+IS_METRIC = CONFIG.get_option("metric", True)
 
 
 # --- CONVERSION FUNCTIONS ---
@@ -75,6 +75,18 @@ def db_color_from_hex(hex_color_string):
 
     # Create and return the DB.Color object
     return DB.Color(r, g, b)
+
+
+def hex_from_db_color(db_color):
+    # color_value = "#{:02X}{:02X}{:02X}".format(db_color.Red,db_color.Green,db_color.Blue)
+    # isn't working with IroPyton 2.7 so ...
+    r = db_color.Red
+    g = db_color.Green
+    b = db_color.Blue
+
+    # Use the reliable '%' formatting style
+    color_value = "#%02X%02X%02X" % (r, g, b)
+    return color_value
 
 
 def dim_from_string(dim_as_string):
@@ -650,7 +662,7 @@ class RoofingForm(Window):
 
         # Get unit selection from UI and save if it changed
         is_metric_ui = self.MetricRadioButton.IsChecked
-        if is_metric_ui != IS_METRIC:
+        if is_metric_ui != IS_METRIC or CONFIG.get_option("metric", None) != IS_METRIC:
             CONFIG.set_option("Metric", is_metric_ui)
             script.save_config()
             IS_METRIC = is_metric_ui  # Update global for this session
@@ -664,15 +676,8 @@ class RoofingForm(Window):
 
         # Save material color to config
         if self.material_color and self.material_color.IsValid:
-            # color_value = "#{:02X}{:02X}{:02X}".format(self.material_color.Red,self.material_color.Green,self.material_color.Blue)
-            r = self.material_color.Red
-            g = self.material_color.Green
-            b = self.material_color.Blue
-
-            # Use the reliable '%' formatting style
-            color_value = "#%02X%02X%02X" % (r, g, b)
-            if color_value != CONFIG.get_option("MaterialColor", "not set"):
-                CONFIG.set_option("MaterialColor", color_value)
+            if hex_from_db_color(self.material_color) != CONFIG.get_option("MaterialColor", "not set"):
+                CONFIG.set_option("MaterialColor", hex_from_db_color(self.material_color))
                 script.save_config()
 
         if (

@@ -156,7 +156,7 @@
         <!-- 4. UNITS -->
         <GroupBox Header="Unit of Measurement:" FontWeight="Bold" Margin="0,5,0,10" BorderThickness="1">
             <StackPanel Orientation="Horizontal" Margin="10">
-                <RadioButton Name="MetricRadioButton" Content="Metric" IsChecked="True" Margin="0" Checked="Unit_Changed" />
+                <RadioButton Name="MetricRadioButton" Content="Metric" IsChecked="True" Margin="0,0,15,0" Checked="Unit_Changed" />
                 <RadioButton Name="ImperialRadioButton" Content="Imperial" IsChecked="False" Margin="0" Checked="Unit_Changed" />
             </StackPanel>
         </GroupBox>

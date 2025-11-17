@@ -1,6 +1,7 @@
 # brick patterns
 ENGLISH:
     name: English bond with mortar joints
+    type: brick
     description: >-
         Alternate rows of stretcher and header bonds
     thumbnail: ENGLISH_THUMB.png
@@ -14,6 +15,7 @@ ENGLISH:
         90,({width}/2),({height}+{mortar}/2),0,({width}/2+{mortar}/2),({height}+{mortar}),-({height}+{mortar})
 ENGLISH_SL:
     name: English bond with mortar joints - single line version
+    type: brick
     description: >-
         Alternate rows of stretcher and header bonds
     thumbnail: ENGLISH_SL_THUMB.png

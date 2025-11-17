@@ -1,91 +1,164 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:av="http://schemas.microsoft.com/expression/blend/2008" 
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-        mc:Ignorable="av"
-        Title="Dimensions Input Form" Height="600" Width="300">
-    <StackPanel Margin="10">
-        <!-- Title -->
-        <TextBlock Text="Brick Pattern Maker" FontSize="18" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+        Title="Brick &amp; Tile Pattern Generator"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="ToolWindow"
+        Width="580" SizeToContent="Height"
+        Background="White"
+        Topmost="True">
 
-        <!-- Description -->
-        <TextBlock TextWrapping="Wrap">
-            <Run Text="Select the pattern brick layout pattern to create, "/>
-            <Run Text="then enter the required brick dimensions."/>
-        </TextBlock>
+    <StackPanel Margin="15">
 
-        <!-- Separator -->
-        <Separator Margin="0,10,0,10"/>
+        <!-- 1. PATTERN SELECTION -->
+        <GroupBox Header="Select Pattern" FontWeight="Bold" Margin="0,0,0,10" BorderThickness="1">
+            <StackPanel Margin="10">
+                <ScrollViewer Height="90" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto">
+                    <ItemsControl Name="ImagePalette" ItemsSource="{Binding ImageThumbnails}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
 
-        <!-- Brick pattern selection -->
-        <TextBlock Text="Select Fill Pattern:" FontWeight="Bold" FontSize="16" Margin="0,20,0,10"/>
-		<ScrollViewer Height="90">
-			<ItemsControl Name="ImagePalette" Margin="0,0,0,10" ItemsSource="{Binding ImageThumbnails}">
-				<ItemsControl.ItemsPanel>
-					<ItemsPanelTemplate>
-						<WrapPanel />
-					</ItemsPanelTemplate>
-				</ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Image Tag="{Binding PatternName}" Source="{Binding Thumbnail}"
+                                       Width="50" Height="43" Margin="5" RenderOptions.BitmapScalingMode="HighQuality"
+                                       MouseLeftButtonDown="Thumbnail_MouseLeftButtonDown" ToolTip="{Binding ToolTip}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Grid Margin="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="310"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-				<ItemsControl.ItemTemplate>
-					<DataTemplate>
-						<Image Tag="{Binding PatternName}" Source="{Binding Thumbnail}" Width="50" Height="43" Margin="5"
-							   MouseLeftButtonDown="Thumbnail_MouseLeftButtonDown" ToolTip="{Binding ToolTip}" />
-					</DataTemplate>
-				</ItemsControl.ItemTemplate>
-			</ItemsControl>
-		</ScrollViewer>
+                    <!-- Column 1: Preview -->
+                    <Image Name="SelectedImage"
+                        Grid.Column="0"
+                        Margin="0,0,10,0"
+                        Width="297" Height="255"
+                        RenderOptions.BitmapScalingMode="HighQuality"
+                        Stretch="Uniform" />
 
-		<Grid>
-			<Grid.ColumnDefinitions>
-				<ColumnDefinition Width="160" />
-				<ColumnDefinition Width="*"/>
-			</Grid.ColumnDefinitions>
-			<Grid.RowDefinitions>
-				<RowDefinition Height="Auto"/>
-			</Grid.RowDefinitions>
-			<Image Grid.Column="0" Grid.Row="0" Name="SelectedImage" Width="148" Height="128" Margin="0,10,0,20" />
-			<TextBlock Grid.Column="1" Grid.Row="0" Text="" Margin="5,10,5,10" TextWrapping="Wrap">
-				<Run Name="SelectedTitle" FontWeight="Bold" Text=""/>
-				<Run Name="SelectedDescription" Text=""/>
-			</TextBlock>
-		</Grid>
+                    <!-- Column 2: Description -->
+                    <TextBlock TextWrapping="Wrap" Grid.Column="1" Margin="0,10,0,0">
+                        <Run Name="SelectedTitle" FontWeight="Bold" Text="Select a pattern"/>
+                        <LineBreak/>
+                        <Run Name="SelectedDescription" FontWeight="Normal" Text=""/>
+                    </TextBlock>
+                </Grid>
+            </StackPanel>
+        </GroupBox>
 
-        <!-- Brick dimensions -->
-        <TextBlock Text="Dimensions:" FontWeight="Bold" FontSize="16" Margin="0,20,0,10"/>
+        <!-- 2. DIMENSIONS -->
+        <GroupBox Name="DimensionsGroup" Header="Dimensions (mm)" FontWeight="Bold" Margin="0,5,0,10" BorderThickness="1">
+            <Grid Margin="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="310"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- This column will receive all remaining Width -->
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <!-- This row will receive all remaining Height -->
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-		<Grid ShowGridLines="false" Background="White">
-			<Grid.ColumnDefinitions>
-				<ColumnDefinition Width="160" />
-				<ColumnDefinition/>
-				<!-- This column will receive all remaining width -->
-				<ColumnDefinition Width="*"/>
-			</Grid.ColumnDefinitions>
-			<Grid.RowDefinitions>
-				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="Auto"/>
-				<!-- This row will receive all remaining Height -->
-				<RowDefinition Height="Auto"/>
-			</Grid.RowDefinitions>
-			<Image Grid.Column="0" Grid.Row="0" Grid.RowSpan="5" Name="BrickDims" Width="150" Height="100" Margin="0,10,0,20" />
-			<TextBlock Grid.Column="1" Grid.Row="0" Text="Height:" VerticalAlignment="Center" HorizontalAlignment="Right" />
-			<TextBox Grid.Column="2" Grid.Row="0" Name="HeightInput" Width="50" Margin="5,0" VerticalAlignment="Center" HorizontalAlignment="Left" />
-			<TextBlock Grid.Column="1" Grid.Row="1" Text="Width:" VerticalAlignment="Center" HorizontalAlignment="Right" />
-			<TextBox Grid.Column="2" Grid.Row="1" Name="WidthInput" Width="50" Margin="5,0" VerticalAlignment="Center" HorizontalAlignment="Left" />
-			<TextBlock Grid.Column="1" Grid.Row="2" Text="Depth:" VerticalAlignment="Center" HorizontalAlignment="Right" />
-			<TextBox Grid.Column="2" Grid.Row="2" Name="DepthInput" Width="50" Margin="5,0" VerticalAlignment="Center" HorizontalAlignment="Left" />
-			<TextBlock Grid.Column="1" Grid.Row="3" Text="Joint Size:" VerticalAlignment="Center" HorizontalAlignment="Right" />
-			<TextBox Grid.Column="2" Grid.Row="3" Name="JointSizeInput" Width="50" Margin="5,0" VerticalAlignment="Center" HorizontalAlignment="Left" />
-		</Grid>
+                <!-- Column 1: Diagram -->
+                <Image Name="BrickDims"
+                    Grid.Column="0" Grid.Row="0" Grid.RowSpan="5"
+                    Width="200"
+                    Margin="0,0"
+                    RenderOptions.BitmapScalingMode="HighQuality"
+                    Stretch="Uniform" />
 
-        <TextBlock Text="Unit of Measurement:" FontWeight="Bold" FontSize="16" Margin="0,20,0,10"/>
-        <StackPanel Orientation="Horizontal">
-            <RadioButton Name="MetricRadioButton" Content="Metric" IsChecked="True" Margin="5,0" />
-            <RadioButton Name="ImperialRadioButton" Content="Imperial" IsChecked="False" Margin="5,0" />
-        </StackPanel>
+                <!-- Column 2: Inputs -->
+                <TextBlock Grid.Column="1" Grid.Row="0" Text="Height:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <TextBox Name="HeightInput" Grid.Column="2" Grid.Row="0" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text=""/>
+                <TextBlock Grid.Column="1" Grid.Row="1" Text="Width:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <TextBox Name="WidthInput" Grid.Column="2" Grid.Row="1" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text=""/>
+                <TextBlock Grid.Column="1" Grid.Row="2" Text="Depth:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <TextBox Name="DepthInput" Grid.Column="2" Grid.Row="2" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text="" />
+                <TextBlock Grid.Column="1" Grid.Row="3" Text="Joint Size:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <TextBox Name="JointSizeInput" Grid.Column="2" Grid.Row="3" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text="" />
 
-        <Button Name="SubmitButton" Content="Submit" Width="100" Margin="0,20,0,0" Click="SubmitButton_Click"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- 3. OUTPUTS -->
+        <GroupBox Header="Select Outputs" FontWeight="Bold" Margin="0,5,0,10" BorderThickness="1">
+            <Grid Margin="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="225"/>
+                    <!-- This column will receive all remaining Width -->
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Grid.Row="0" Margin="10">
+                    <CheckBox Name="CheckNormal" Content="Generate Normal Map" IsChecked="True" Margin="0,0,0,8" />
+                    <CheckBox Name="CheckBump" Content="Generate Bump Map" IsChecked="True" Margin="0,0,0,8" />
+                    <CheckBox Name="CheckPattern" Content="Create Revit Model Fill Pattern" IsChecked="False" Margin="0,0,0,8" />
+                    <CheckBox Name="CheckFillRegion" Content="Create Revit Filled Region Type" IsChecked="False" Margin="0,0,0,8" />
+                    <CheckBox Name="CheckMaterial" Content="Create Revit Material" IsChecked="False" Margin="0,0,0,8" />
+                </StackPanel>
+
+                <!-- Material Colors -->
+                <Grid Grid.Column="1" Grid.Row="0" Margin="0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Name="BrickColorLabel"
+                            Grid.Column="0" Grid.Row="1"
+                            Text="Brick Face Color:"
+                            Margin="5,0,5,8"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            FontWeight="Normal" />
+                    <Button Name="BrickColorSwatch"
+                            Grid.Column="1" Grid.Row="1"
+                            Width="60" Height="25" Margin="5,0,35,5"
+                            Click="SelectBrickColor_Click"
+                            BorderBrush="Black" BorderThickness="1" />
+                    <TextBlock Name="MortarColorLabel"
+                            Grid.Column="0" Grid.Row="2"
+                            Text="Mortar Joint Color:"
+                            Margin="5,0,5,8"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            FontWeight="Normal" />
+                    <Button Name="MortarColorSwatch"
+                            Grid.Column="1" Grid.Row="2"
+                            Width="60" Height="25" Margin="5,0,35,8"
+                            Click="SelectMortarColor_Click"
+                            BorderBrush="Black" BorderThickness="1" />
+                </Grid>
+            </Grid>
+        </GroupBox>
+
+        <!-- 4. UNITS -->
+        <GroupBox Header="Unit of Measurement:" FontWeight="Bold" Margin="0,5,0,10" BorderThickness="1">
+            <StackPanel Orientation="Horizontal" Margin="10">
+                <RadioButton Name="MetricRadioButton" Content="Metric" IsChecked="True" Margin="0,0,15,0" Checked="Unit_Changed" />
+                <RadioButton Name="ImperialRadioButton" Content="Imperial" IsChecked="False" Margin="0" Checked="Unit_Changed" />
+            </StackPanel>
+        </GroupBox>
+
+        <!-- 5. GENERATE BUTTON -->
+        <Button Name="GenerateButton" Content="Generate"
+                Width="120" Height="30"
+                Margin="0,10,0,5"
+                HorizontalAlignment="Center"
+                Click="GenerateButton_Click" />
+
     </StackPanel>
 </Window>
