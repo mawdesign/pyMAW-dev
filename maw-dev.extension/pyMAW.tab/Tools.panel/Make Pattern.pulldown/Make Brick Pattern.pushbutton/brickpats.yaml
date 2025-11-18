@@ -1,29 +1,57 @@
 # brick patterns
+# pattern line format:
+# angle, origin x, origin y, shift parallel, shift perpendicual, pen down, -pen up, ... more pen up and down
+# https://revitcat.blogspot.com/2015/06/defining-revit-custom-hatch-patterns.html
 ENGLISH:
     name: English bond with mortar joints
     type: brick
+    single_line: ENGLISH_SL
     description: >-
         Alternate rows of stretcher and header bonds
     thumbnail: ENGLISH_THUMB.png
     preview: ENGLISH_PREVIEW.png
-    typename: "Brick - English Bond {width}x{height} with {mortar}mm mortar"
+    typename: "Brick - English Bond {width}x{height} with {mortar}{unit} mortar"
     template: |
-        *BRICK_{width}x{height}x{mortar}ENGLISH,English bond {width} x {height}mm brick with {mortar}mm mortar
+        *BRICK_{width}x{height}x{mortar}ENGLISH,English bond {width} x {height}{unit} brick with {mortar}{unit} mortar
         ;%TYPE=MODEL
-        0,0,({height}+{mortar}/2),0,({height}+{mortar})
-        90,({width}-({width}+{mortar})/4-{mortar}/2),({height}*2+{mortar}*1.5),0,({width}+{mortar}),({height}+{mortar}),-({height}+{mortar})
-        90,({width}/2),({height}+{mortar}/2),0,({width}/2+{mortar}/2),({height}+{mortar}),-({height}+{mortar})
+        0,({width}-({width}+{mortar})/4+{mortar}),0,0,({height}*2),{width},-{mortar}
+        0,({width}-({width}+{mortar})/4+{mortar}),{height},0,({height}*2),{width},-{mortar}
+        0,({width}/2+{mortar}/2),({height}+{mortar}),0,({height}*2),({width}/2-{mortar}/2),-{mortar}
+        0,({width}/2+{mortar}/2),({height}*2-{mortar}),0,({height}*2),({width}/2-{mortar}/2),-{mortar}
+        90,({width}-({width}+{mortar})/4),0,0,({width}+{mortar}),{height},-({height}+{mortar}*2)
+        90,({width}-({width}+{mortar})/4+{mortar}),0,0,({width}+{mortar}),{height},-({height}+{mortar}*2)
+        90,({width}/2-{mortar}/2),({height}+{mortar}),0,({width}/2+{mortar}/2),{height},-({height}+{mortar}*2)
+        90,({width}/2+{mortar}/2),({height}+{mortar}),0,({width}/2+{mortar}/2),{height},-({height}+{mortar}*2)
 ENGLISH_SL:
     name: English bond with mortar joints - single line version
     type: brick
+    single_line: True
     description: >-
         Alternate rows of stretcher and header bonds
     thumbnail: ENGLISH_SL_THUMB.png
     preview: ENGLISH_SL_PREVIEW.png
-    typename: "Brick - English Bond {width}x{height} with {mortar}mm mortar - single line"
+    typename: "Brick - English Bond {width}x{height} with {mortar}{unit} mortar - single line"
     template: |
-        *BRICK_{width}x{height}x{mortar}ENGLISH_SL,English bond {width} x {height}mm brick with {mortar}mm mortar - single line version
+        *BRICK_{width}x{height}x{mortar}ENGLISH_SL,English bond {width} x {height}{unit} brick with {mortar}{unit} mortar - single line version
         ;%TYPE=MODEL
         0,0,({height}+{mortar}/2),0,({height}+{mortar})
         90,({width}-({width}+{mortar})/4-{mortar}/2),({height}*2+{mortar}*1.5),0,({width}+{mortar}),({height}+{mortar}),-({height}+{mortar})
         90,({width}/2),({height}+{mortar}/2),0,({width}/2+{mortar}/2),({height}+{mortar}),-({height}+{mortar})
+OCTAGONS_SL:
+    name: Octagonal and square tiles - single line version
+    type: tile
+    single_line: True
+    description: >-
+        Square tiles in the spaces between octangonal tiles, enter width of octagonal tiles
+    thumbnail: ENGLISH_SL_THUMB.png
+    preview: ENGLISH_PREVIEW.png
+    typename: "Tile - Octagonal {width} x {width} and Square tiles with no grout joint"
+    template: |
+        *TILE_{width}x{width}OCTAGONAL, Octagonal {width} x {width}{unit} tiles with no grout
+        ;%TYPE=MODEL
+        0,0,0,({width}/1.414214),({width}/1.414214),({width}/2.414214),-{width}
+        0,0,({width}/2.414214),({width}/1.414214),({width}/1.414214),({width}/2.414214),-{width}
+        90,0,0,({width}/1.414214),({width}/1.414214),({width}/2.414214),-{width}
+        90,({width}/2.414214),0,({width}/1.414214),({width}/1.414214),({width}/2.414214),-{width}
+        45,({width}/2.414214),({width}/2.414214),{width},{width},({width}/2.414214),-(({width}/2.414214)*1.414214)
+        -45,({width}/2.414214),0,{width},{width},({width}/2.414214),-(({width}/2.414214)*1.414214)
