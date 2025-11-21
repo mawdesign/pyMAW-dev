@@ -1,421 +1,188 @@
 # -*- coding: utf-8 -*-
 """
-Shared library for creating and updating Revit Materials,
-specifically for applying surface patterns and appearance assets
-like bump maps with real-world scaling.
+Test script for the 'pat_lib' library.
+
+This script imports the 'pat_lib' module from the extension's 'lib'
+folder and tests the bitmap generation and saving functionality.
 """
 
 # pyRevit Imports
-from pyrevit import revit, script, forms, DB
-from pyrevit.revit.db.transaction import Transaction
+from pyrevit import forms
 
-# .NET Imports
+# Standard Library Imports
+import os
+import traceback
+
+# .NET Imports (for the ImageFormat, just in case)
 import clr
-import System
-from System.Collections.Generic import IList
-import traceback  # <--- ADDED FOR DETAILED ERROR LOGGING
+try:
+    clr.AddReference('System.Drawing')
+    from System.Drawing.Imaging import ImageFormat
+except Exception as e:
+    forms.alert("Failed to import System.Drawing.Imaging:\n{}".format(e),
+                title="Test Failed: .NET Import Error")
+    raise
 
-clr.AddReference("System.Core")
-clr.AddReference("System")
+# --- Import the Library to be Tested ---
+try:
+    import pat_lib as Hatch
+except ImportError as e:
+    forms.alert("Failed to import 'pat_lib.py'.\n"
+                "Ensure 'pat_lib.py' is in your extension's 'lib' folder.\n\n"
+                "Error: {}".format(e),
+                title="Test Failed: Import Error")
+    raise
+except Exception as e:
+    forms.alert("An unknown error occurred importing 'pat_lib.py':\n{}"
+                .format(traceback.format_exc()),
+                title="Test Failed: Unknown Import Error")
+    raise
 
 
-def _get_material_by_name(doc, name):
-    """Finds an existing material by name."""
-    collector = DB.FilteredElementCollector(doc).OfClass(DB.Material)
-    for mat in collector:
-        if mat.Name == name:
-            return mat
-    return None
-
-
-def _find_generic_asset_template(doc):
+def run_pat_lib_test():
     """
-    Finds a 'Generic' Asset to use as a template for creating
-    new Appearance Assets.
-    Searches Document assets first, then Application (library) assets.
-    (Based on logic from material_tools.py)
+    Runs the test for parsing a PAT string and saving a bitmap.
     """
-    # 1. Search Document Assets
-    doc_assets = [
-        elem.GetRenderingAsset()
-        for elem in DB.FilteredElementCollector(doc)
-        .OfClass(DB.AppearanceAssetElement)
-        .ToElements()
-    ]
-    generic_asset_template = next(
-        (
-            a
-            for a in doc_assets
-            if a.FindByName(DB.Visual.Generic.GenericDiffuse)
-        ),
-        None,
-    )
-
-    if generic_asset_template:
-        return generic_asset_template
-
-    # 2. Search Application (Library) Assets
-    app_assets = doc.Application.GetAssets(DB.Visual.AssetType.Appearance)
-    generic_asset_template = next(
-        (
-            a
-            for a in app_assets
-            if a.FindByName(DB.Visual.Generic.GenericDiffuse)
-        ),
-        None,
-    )
-
-    if generic_asset_template:
-        return generic_asset_template
-
-    # 3. Fail
-    return None
-
-
-def _create_new_appearance_asset(doc, asset_name):
-    """
-    Creates a new AppearanceAssetElement by finding a "Generic" template
-    and using it as a base.
-    Returns the ElementId of the new asset.
-    (Based on logic from material_tools.py)
-    """
-    # Find a "Generic" asset to use as a template
-    generic_asset_template = _find_generic_asset_template(doc)
-
-    if not generic_asset_template:
-        forms.alert("Could not find any 'Generic' appearance asset to duplicate.")
-        return DB.ElementId.InvalidElementId
+    print("--- Starting pat_lib Test ---")
+    
+    # 1. Define a sample .pat file content as a string
+    sample_pat_data = """;%UNITS=MM
+;%VERSION=3.0
+;;Exported by pyMAW, based on script by Sean Page 2022
+;;https://forum.dynamobim.com/t/export-fill-pattern-pat-file-from-revit/83014
+;;
+*BRICK230X76X10ENGLISH_SL, BRICK_230x76x10ENGLISH_SL
+;%TYPE=MODEL
+0.0,0.0,81.0,0.0,86.0,0.0,0.0
+90.0,175.0,167.0,0.0,240.0,86.0,-86.0
+90.0,115.0,81.0,0.0,120.0,86.0,-86.0
+;;
+*BRICK230X76X10ENGLISH, BRICK_230x76x10ENGLISH
+;%TYPE=MODEL
+0.0,180.0,0.0,0.0,172.0,230.0,-10.0
+0.0,180.0,76.0,0.0,172.0,230.0,-10.0
+0.0,120.0,86.0,0.0,172.0,110.0,-10.0
+0.0,120.0,162.0,0.0,172.0,110.0,-10.0
+90.0,170.0,0.0,0.0,240.0,76.0,-96.0
+90.0,180.0,0.0,0.0,240.0,76.0,-96.0
+90.0,110.0,86.0,0.0,120.0,76.0,-96.0
+90.0,120.0,86.0,0.0,120.0,76.0,-96.0
+;;
+*BRICK230X76X10FLEMISH_SL, BRICK_230x76x10FLEMISH_SL
+;%TYPE=MODEL
+0.0,0.0,81.0,0.0,86.0,0.0,0.0
+90.0,115.0,81.0,86.0,180.0,86.0,-86.0
+90.0,355.0,81.0,86.0,180.0,86.0,-86.0
+;;
+*BRICK230X76X10FLEMISH, BRICK_230x76x10FLEMISH
+;%TYPE=MODEL
+0.0,180.0,0.0,180.0,86.0,110.0,10.0
+0.0,180.0,76.0,180.0,86.0,110.0,10.0
+90.0,170.0,0.0,86.0,180.0,76.0,-96.0
+90.0,180.0,0.0,86.0,180.0,76.0,-96.0
+90.0,290.0,0.0,86.0,180.0,76.0,-96.0
+90.0,300.0,0.0,86.0,180.0,76.0,-96.0
+;;
+*BRICK230X76X10STACKED_SL, BRICK_230x76x10STACKED_SL
+;%TYPE=MODEL
+0.0,0.0,81.0,0.0,86.0,0.0,0.0
+90.0,235.0,0.0,0.0,240.0,0.0,0.0
+;;
+*BRICK230X76X10STACKED, BRICK_230x76x10STACKED
+;%TYPE=MODEL
+0.0,0.0,0.0,0.0,86.0,230.0,-10.0
+0.0,0.0,76.0,0.0,86.0,230.0,-10.0
+90.0,0.0,0.0,0.0,240.0,76.0,-10.0
+90.0,230.0,0.0,0.0,240.0,76.0,-10.0
+;;
+*BRICK230X76X10STRETCHERHALF_SL, BRICK_230x76x10STRETCHERHALF_SL
+;%TYPE=MODEL
+0.0,0.0,81.0,0.0,86.0,0.0,0.0
+90.0,115.0,81.0,86.0,120.0,86.0,-86.0
+;;
+*BRICK230X76X10STRETCHERHALF, BRICK_230x76x10STRETCHERHALF
+;%TYPE=MODEL
+0.0,0.0,0.0,120.0,86.0,230.0,-10.0
+0.0,0.0,76.0,120.0,86.0,230.0,-10.0
+90.0,0.0,0.0,86.0,120.0,76.0,-96.0
+90.0,230.0,0.0,86.0,120.0,76.0,-96.0
+;;
+*BRICK230X76X10STRETCHERTHIRD_SL, BRICK_230x76x10STRETCHERTHIRD_SL
+;%TYPE=MODEL
+0.0,0.0,81.0,0.0,86.0,0.0,0.0
+90.0,75.0,81.0,0.0,240.0,86.0,-86.0
+90.0,235.0,167.0,0.0,240.0,86.0,-86.0
+;;
+*BRICK230X76X10STRETCHERTHIRD, BRICK_230x76x10STRETCHERTHIRD
+;%TYPE=MODEL
+0.0,0.0,0.0,0.0,172.0,230.0,-10.0
+0.0,0.0,76.0,0.0,172.0,230.0,-10.0
+0.0,80.0,86.0,0.0,172.0,230.0,-10.0
+0.0,80.0,162.0,0.0,172.0,230.0,-10.0
+90.0,0.0,0.0,0.0,240.0,76.0,-96.0
+90.0,230.0,0.0,0.0,240.0,76.0,-96.0
+90.0,70.0,86.0,0.0,240.0,76.0,-96.0
+90.0,80.0,86.0,0.0,240.0,76.0,-96.0
+;;
+"""
 
     try:
-        # Create the new AppearanceAssetElement
-        new_asset_elem = DB.AppearanceAssetElement.Create(
-            doc, asset_name, generic_asset_template
-        )
-        return new_asset_elem.Id
-    except Exception as e:
-        print("Error creating new appearance asset: {}".format(e))
-        return DB.ElementId.InvalidElementId
+        # 2. Create a parser and parse the string data
+        print("Parsing pattern string...")
+        patterns = Hatch.PatternSet(sample_pat_data)
 
+        # 3. Get a the patterns
+        for brick_pattern in patterns:
+            print("Getting '{}' pattern...".format(brick_pattern.name))
+        
+            if not brick_pattern:
+                forms.alert("Test failed: Could not find this pattern after parsing.",
+                            title="Test Failed: Parsing Error")
+                return
 
-def create_or_update_material(
-    doc,
-    material_name,
-    material_color,
-    surface_pattern_element,
-    bump_map_path,
-    texture_real_world_width_int,
-    texture_real_world_height_int,
-):
-    """
-    Creates a new material or updates an existing one with graphics
-    and appearance properties.
-    """
-    if (
-        not bump_map_path
-        or not System.IO.File.Exists(bump_map_path)
-    ):
-        return None, "Bump map file not found at path: {}".format(bump_map_path)
-
-    if not surface_pattern_element:
-        return None, "Invalid surface pattern element provided."
-
-    try:
-        # --- 1. Get or Create Material ---
-        material = _get_material_by_name(doc, material_name)
-        is_new_material = False
-
-        # All modifications, including material creation, must be inside.
-        with Transaction(
-            "Create/Update Material: " + material_name
-        ) as rvt_transaction:
-
-            if not material:
-                material_id = DB.Material.Create(doc, material_name)
-                material = doc.GetElement(material_id)
-                is_new_material = True
-
-            # --- 2. Set Graphics Properties ---
-            material.Color = material_color
-            material.SurfaceForegroundPatternId = surface_pattern_element.Id
-            # Set pattern color to black (common for roofing)
-            material.SurfaceForegroundPatternColor = DB.Color(0, 0, 0)
-            material.Transparency = 0
-            material.UseRenderAppearanceForShading = True
-
-            # --- 3. Get or Create Appearance Asset ---
-            appearance_asset_id = material.AppearanceAssetId
-            if appearance_asset_id == DB.ElementId.InvalidElementId:
-                # Material has no appearance, create one
-                appearance_asset_id = _create_new_appearance_asset(
-                    doc, material_name + " Appearance"
-                )
-                if appearance_asset_id != DB.ElementId.InvalidElementId:
-                    material.AppearanceAssetId = appearance_asset_id
-                else:
-                    rvt_transaction.RollBack()
-                    return None, "Failed to create new appearance asset."
-
-            appearance_asset_elem = doc.GetElement(appearance_asset_id)
-            rendering_asset = appearance_asset_elem.GetRenderingAsset()
-
-            # --- 4. Edit the Appearance Asset (The Hard Part) ---
-            with DB.Visual.AppearanceAssetEditScope(doc) as edit_scope:
-                # Start editing the asset
-                editable_asset = edit_scope.Start(appearance_asset_id)
-
-                # --- ADDED: Reset properties to default (from ref file) ---
-                prop_bool = editable_asset.FindByName(
-                    DB.Visual.Generic.CommonTintToggle
-                )
-                if prop_bool:
-                    prop_bool.Value = True
-
-                prop_bool = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericIsMetal
-                )
-                if prop_bool:
-                    prop_bool.Value = False
-
-                prop_double = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericDiffuseImageFade
-                )
-                if prop_double and prop_double.IsEditable:
-                    prop_double.Value = 0.0
-
-                prop_double = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericTransparency
-                )
-                if prop_double and prop_double.IsEditable:
-                    prop_double.Value = 0.0
-
-                prop_double = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericGlossiness
-                )
-                if prop_double and prop_double.IsEditable:
-                    prop_double.Value = 0.1
-
-                prop_double = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericReflectivityAt0deg
-                )
-                if prop_double and prop_double.IsEditable:
-                    prop_double.Value = 0.1
-
-                prop_double = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericReflectivityAt90deg
-                )
-                if prop_double and prop_double.IsEditable:
-                    prop_double.Value = 0.0
-
-                prop_color = editable_asset.FindByName(
-                    DB.Visual.Generic.CommonTintColor
-                )
-                if prop_color:
-                    prop_color.SetValueAsColor(DB.Color(127, 127, 127))
-
-                prop_color = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericDiffuse
-                )
-                if prop_color:
-                    prop_color.SetValueAsDoubles([0.95, 0.95, 0.9, 1.0])
-                    connected_color_asset = prop_color.GetSingleConnectedAsset()
-                    if connected_color_asset:
-                        # Find the target asset path property
-                        color_bitmap_property = connected_color_asset.FindByName(DB.Visual.UnifiedBitmap.UnifiedbitmapBitmap) # AssetPropertyString
-                        # ensure no image from copied material asset
-                        if color_bitmap_property:
-                            color_bitmap_property.Value = ""
-
-                # --- Find the Bump Map Property ---
-                bump_map_prop = editable_asset.FindByName(
-                    DB.Visual.Generic.GenericBumpMap
-                )
-                if not bump_map_prop:
-                    print("Could not find 'Generic.BumpMap' property")
-                    edit_scope.Cancel()
-                    return None, "Could not find 'Generic.BumpMap' property"
-                    
-                # --- Get or Create the Texture Asset (UnifiedBitmap) ---
-                texture_asset = None
-                if bump_map_prop.GetSingleConnectedAsset():
-                    texture_asset = bump_map_prop.GetSingleConnectedAsset()
-                else:
-                    # Create and connect a new UnifiedBitmap
-                    bump_map_prop.AddConnectedAsset(
-                        DB.Visual.UnifiedBitmap.__name__
-                    )
-                    texture_asset = bump_map_prop.GetSingleConnectedAsset()
-
-                # --- Edit the Texture Asset Properties (Merged Logic) ---
-                if texture_asset:
-                    # 1. Set the file path (from reference file)
-                    source_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.UnifiedbitmapBitmap
-                    )
-                    if source_prop:
-                        if source_prop.IsValidValue(bump_map_path):
-                            source_prop.Value = bump_map_path
-                        else:
-                            print(
-                                "Warning: Invalid value for bump map path: {}".format(
-                                    bump_map_path
-                                )
-                            )
-                    else:
-                        print(
-                            "Could not find 'UnifiedBitmap.UnifiedbitmapBitmap' property"
-                        )
-
-                    # # 2. Set Texture Mode to "Real World"
-                    # mapping_prop = texture_asset.FindByName(
-                        # DB.Visual.UnifiedBitmap.WCSMappingType
-                    # )
-                    # if mapping_prop:
-                        # mapping_prop.Value = DB.Visual.WCSMappingType.RealWorld
-                    # else:
-                        # print(
-                            # "Could not find 'UnifiedBitmap.WCSMappingType' property"
-                        # )
-
-                    # 3. Set Real World Scale (U = Width, V = Height)
-                    scale_u_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.TextureRealWorldScaleX
-                    )
-                    if scale_u_prop:
-                        scale_u_prop.Value = (
-                            texture_real_world_width_int * 12 # image scale seems to be in inches?
-                        )
-                    else:
-                        print(
-                            "Could not find 'UnifiedBitmap.RealWorldScaleU' property"
-                        )
-
-                    scale_v_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.TextureRealWorldScaleY
-                    )
-                    if scale_v_prop:
-                        scale_v_prop.Value = (
-                            texture_real_world_height_int * 12 # image scale seems to be in inches?
-                        )
-                    else:
-                        print(
-                            "Could not find 'UnifiedBitmap.RealWorldScaleV' property"
-                        )
-
-                    # 4. Set Offset to 0
-                    offset_u_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.TextureRealWorldOffsetX
-                    )
-                    if offset_u_prop:
-                        offset_u_prop.Value = 0.0
-
-                    offset_v_prop = texture_asset.FindByName(
-                        DB.Visual.UnifiedBitmap.TextureRealWorldOffsetY
-                    )
-                    if offset_v_prop:
-                        offset_v_prop.Value = 0.0
-                else:
-                    print("Could not create or find connected texture asset.")
-
-                # Commit the changes to the asset
-                edit_scope.Commit(True)
-
-            status_msg = "Material '{}' created.".format(material_name)
-            if not is_new_material:
-                status_msg = "Material '{}' updated.".format(material_name)
-
-            return material, status_msg
+            # 4. Generate a bitmap
+            print("Generating 200x200 bitmap with scale auto...")
+            bmp = brick_pattern.get_bitmap(200, 200)
+            
+            # 5. Define a save path (e.g., user's Downloads folder)
+            try:
+                # os.path.expanduser('~/Downloads') is the most reliable way
+                downloads_path = os.path.join(os.path.expanduser('~'), r'Downloads\patterns')
+                if not os.path.exists(downloads_path):
+                     # Fallback to user's home directory if Downloads doesn't exist
+                     downloads_path = os.path.expanduser('~')
+                
+                save_path = os.path.join(downloads_path, "{}_test.png".format(brick_pattern.name))
+            except Exception as e:
+                print("Error getting save path: {}".format(e))
+                # Fallback to a relative path
+                save_path = "pyrevit_pat_lib_test.png"
+            
+            # 6. Save the bitmap to a file
+            print("Saving bitmap to: {}".format(save_path))
+            bmp.Save(save_path, ImageFormat.Png)
+            bmp.Dispose()
+        
+        # 7. Report Success
+        print("Test successful!")
+        # forms.alert("Test Successful!\n\nBitmap saved to:\n{}".format(save_path),
+                    # title="pat_lib Test Complete")
 
     except Exception as e:
-        # --- ADDED FULL TRACEBACK LOGGING ---
-        print("--- ERROR IN create_or_update_material ---")
+        # 8. Report Failure
+        print("--- TEST FAILED ---")
         print(traceback.format_exc())
-        print("--- END ERROR ---")
-        return None, "Failed to create/update material: {}".format(e)
+        print("-------------------")
+        forms.alert("The pat_lib test failed. See console for details.\n\n"
+                    "Error: {}".format(e),
+                    title="Test Failed: Runtime Error")
 
 
-# --- TEST HARNESS ---
-# This part only runs if you execute this script directly
-if __name__ == "__main__":
-    doc = revit.doc
-    uidoc = revit.uidoc
+# --- Main execution point ---
+if __name__ == '__main__':
+    run_pat_lib_test()
 
-    print("Running Material Generator Test...")
 
-    # --- 1. Set Up Test Data ---
-    TEST_MATERIAL_NAME = "Test Roofing Material"
-    TEST_MATERIAL_COLOR = DB.Color(150, 150, 150)
-    TEST_PATTERN_NAME = "Vertical"  # <--- MUST exist in your project
-    TEST_TEXTURE_WIDTH_INT = 2.0  # 2.0 feet
-    TEST_TEXTURE_HEIGHT_INT = 2.0  # 2.0 feet
-
-    # --- 2. Get Test Fill Pattern ---
-    test_pattern = DB.FillPatternElement.GetFillPatternElementByName(
-        doc, DB.FillPatternTarget.Model, TEST_PATTERN_NAME
-    )
-    if not test_pattern:
-        forms.alert(
-            "Test aborted. Please create a Model Fill Pattern named '{}' to run this test.".format(
-                TEST_PATTERN_NAME
-            ),
-            title="Test Setup Error",
-            exitscript=True,
-        )
-
-    # --- 3. Get Test Bump Map ---
-    # test_bump_path = forms.pick_file(
-        # file_ext="png",
-        # multi_file=False,
-        # title="Select a PNG file to use as the test bump map",
-    # )
-    test_bump_path = r"C:\Users\warwickm\Downloads\Standing Seam-2@8_bump-24in.png"
-    if not test_bump_path:
-        forms.alert("Test aborted. No bump map selected.", title="Test Cancelled")
-    else:
-        print("Test Parameters:")
-        print("  Material Name: {}".format(TEST_MATERIAL_NAME))
-        print("  Pattern Name: {}".format(TEST_PATTERN_NAME))
-        print("  Texture Path: {}".format(test_bump_path))
-        print(
-            "  Texture Size: {}' x {}'".format(
-                TEST_TEXTURE_WIDTH_INT, TEST_TEXTURE_HEIGHT_INT
-            )
-        )
-
-        # --- 4. Run the Function ---
-        # Added try/except here as well to catch any errors
-        try:
-            # --- FIXED ARGUMENT LIST ---
-            material, message = create_or_update_material(
-                doc,
-                TEST_MATERIAL_NAME,
-                TEST_MATERIAL_COLOR,
-                test_pattern,
-                test_bump_path,
-                TEST_TEXTURE_WIDTH_INT,
-                TEST_TEXTURE_HEIGHT_INT,
-            )
-        except Exception as e:
-            # --- ADDED FULL TRACEBACK LOGGING ---
-            print("--- ERROR IN TEST HARNESS CALL ---")
-            print(traceback.format_exc())
-            print("--- END ERROR ---")
-            material = None
-            message = "Test harness caught an exception: {}".format(e)
-
-        # --- 5. Report Results ---
-        if material:
-            print(message)
-            forms.alert(message, title="Test Complete")
-            # Select and show the new material in the project browser
-            uidoc.Selection.SetElementIds(
-                System.Array[DB.ElementId]([material.Id])
-            )
-            uidoc.ShowElements(material.Id)
-        else:
-            print("Test Failed: {}".format(message))
-            forms.alert(message, title="Test Failed")
-
-    print("Test finished.")
 
 
 ### END HERE

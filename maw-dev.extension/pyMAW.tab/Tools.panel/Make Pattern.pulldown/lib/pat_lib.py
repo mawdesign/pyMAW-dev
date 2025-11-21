@@ -1,4 +1,18 @@
 import math
+import clr
+import System
+
+# .NET Imports for Bitmap Generation
+clr.AddReference('System.Drawing')
+from System.Drawing import Bitmap, Graphics, Pen, SolidBrush, Color, Drawing2D
+from System.Drawing.Imaging import ImageFormat
+
+# .NET Imports for WPF Bitmap Conversion
+clr.AddReference('PresentationCore')
+clr.AddReference('PresentationFramework')
+from System.IO import MemoryStream
+from System.Windows.Media.Imaging import BitmapImage, PngBitmapEncoder
+
 
 class PatternLineFamily:
     """
@@ -71,6 +85,92 @@ class HatchPattern:
             return 1.0
             
         return target_size / (repetitions * max_displacement)
+
+    def generate_bitmap(self, width, height, scale=None, background_color=None, line_color=None):
+        """
+        Generates a System.Drawing.Bitmap of the hatch pattern.
+
+        Args:
+            width (int): The desired width of the bitmap.
+            height (int): The desired height of the bitmap.
+            scale (float, optional): A specific scale to apply to the pattern.
+                                     If None, an estimated scale will be used.
+            background_color (System.Drawing.Color, optional): The background color.
+                                                            Defaults to Color.White.
+            line_color (System.Drawing.Color, optional): The line color.
+                                                        Defaults to Color.Black.
+
+        Returns:
+            System.Drawing.Bitmap: The generated bitmap object.
+        """
+        # Set default colors if not provided
+        if background_color is None:
+            background_color = Color.White
+        if line_color is None:
+            line_color = Color.Black
+
+        # Create the bitmap and graphics objects
+        bmp = Bitmap(width, height)
+        gfx = Graphics.FromImage(bmp)
+
+        # Set rendering quality
+        gfx.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+
+        # Fill the background
+        gfx.Clear(background_color)
+
+        # Create the pen for drawing lines
+        pen = Pen(line_color, 1) # 1-pixel wide lines
+
+        # Use the existing logic to get line instructions
+        # We use max(width, height) to ensure the generation covers the whole area
+        # even for rotated patterns.
+        lines = self.generate_drawing_instructions(max(width, height), scale)
+
+        for line in lines:
+            # Draw each line onto the graphics object
+            try:
+                gfx.DrawLine(pen, 
+                             int(round(line['x1'])), int(round(line['y1'])), 
+                             int(round(line['x2'])), int(round(line['y2'])))
+            except Exception as e:
+                # Catch potential overflow errors if lines are excessively long
+                print("Warning: Error drawing line: {}".format(e))
+
+        # Clean up .NET objects
+        pen.Dispose()
+        gfx.Dispose()
+
+        return bmp
+
+    def convert_to_wpf_bitmap(self, bitmap):
+        """
+        Converts a System.Drawing.Bitmap to a WPF-compatible BitmapSource.
+        This is for use in the UI preview.
+        
+        Args:
+            bitmap (System.Drawing.Bitmap): The bitmap to convert.
+
+        Returns:
+            System.Windows.Media.Imaging.BitmapSource: A WPF-compatible image.
+        """
+        stream = MemoryStream()
+        bitmap.Save(stream, ImageFormat.Png)
+        stream.Seek(0, System.IO.SeekOrigin.Begin)
+        
+        wpf_bitmap = BitmapImage()
+        wpf_bitmap.BeginInit()
+        wpf_bitmap.StreamSource = stream
+        wpf_bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad
+        wpf_bitmap.EndInit()
+        wpf_bitmap.Freeze() # Important for performance and cross-thread access
+
+        # Dispose of the bitmap and stream
+        stream.Close()
+        stream.Dispose()
+        bitmap.Dispose()
+
+        return wpf_bitmap
 
     def generate_drawing_instructions(self, square_size, scale=None):
         """
@@ -355,3 +455,21 @@ if __name__ == '__main__':
         print(f"Generated {len(custom_scaled_lines)} line segments.")
         # for line in custom_scaled_lines:
         #     print(line)
+
+        # --- NEW: Test Bitmap Generation ---
+        print("\n--- Generating Bitmap Test ---")
+        try:
+            # Generate a bitmap using the custom scale
+            bmp = brick_pattern.generate_bitmap(200, 200, scale=4.0)
+            
+            # Save it to a file
+            save_path = "test_pattern_preview.png"
+            bmp.Save(save_path, ImageFormat.Png)
+            bmp.Dispose()
+            print(f"Successfully saved test bitmap to: {save_path}")
+            
+            # Note: To test the WPF converter, you would need a WPF application context,
+            # which is not available in this simple console test.
+            
+        except Exception as e:
+            print(f"Error during bitmap generation: {e}")
