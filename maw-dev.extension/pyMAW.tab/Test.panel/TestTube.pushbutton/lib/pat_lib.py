@@ -5,17 +5,18 @@ import io
 
 # --- Configuration Constants ---
 # Limit the number of parallel lines to be drawn per line family.
-# This prevents crashes/freezes from poorly formed PAT files (delta_x close to zero).
+# This prevents crashes/freezes from poorly formed PAT files (delta_v close to zero).
 MAX_LINES_PER_FAMILY = 4096
 
 # --- Data Structures for Enhanced PAT Library ---
 
+
 class Line:
     """
-    Represents a single line family definition from a .pat file.
-    (Previously PatLine)
+    Represents a single line family definition from a .pat file using Local Vector Basis.
     """
-    def __init__(self, angle, origin_x, origin_y, delta_x, delta_y, dashes):
+
+    def __init__(self, angle, origin_x, origin_y, delta_u, delta_v, dashes):
         """
         Initializes a Line instance.
 
@@ -23,18 +24,42 @@ class Line:
             angle (float): The angle of the lines in degrees.
             origin_x (float): The x-coordinate of the origin point (Base Point).
             origin_y (float): The y-coordinate of the origin point (Base Point).
-            delta_x (float): Perpendicular displacement (distance between lines).
-            delta_y (float): Parallel displacement (stagger).
+            delta_u (float): Displacement parallel to the line angle.
+            delta_v (float): Displacement perpendicular to the line angle.
             dashes (list): Dash/gap lengths. Positive is line, negative is gap, zero is dot.
         """
         # Store angle in radians internally for math efficiency
         self._angle_rad = math.radians(angle)
-        self.angle_deg = angle 
+        self.angle_deg = angle
         self.origin_x = origin_x
         self.origin_y = origin_y
-        self.delta_x = delta_x
-        self.delta_y = delta_y
+        self.delta_u = delta_u
+        self.delta_v = delta_v
         self.dashes = dashes if dashes is not None else []
+
+    @property
+    def vec_u(self):
+        """Returns the unit vector parallel to the line: (cos(a), sin(a))."""
+        return (math.cos(self._angle_rad), math.sin(self._angle_rad))
+
+    @property
+    def vec_v(self):
+        """Returns the unit vector perpendicular to the line: (-sin(a), cos(a))."""
+        return (-math.sin(self._angle_rad), math.cos(self._angle_rad))
+
+    def get_family_offset(self):
+        """
+        Calculates the global offset vector to the next line in the family.
+        Logic: Offset = (delta_v * vec_v) + (delta_u * vec_u)
+        """
+        u = self.vec_u
+        v = self.vec_v
+
+        # Offset vector calculation based on local basis
+        off_x = round(self.delta_u * u[0] + self.delta_v * v[0], 8)
+        off_y = round(self.delta_u * u[1] + self.delta_v * v[1], 8)
+
+        return (off_x, off_y)
 
     def get_length(self):
         """Calculates the total length of one full dash pattern repetition."""
@@ -44,72 +69,35 @@ class Line:
         """Scales the line family's base point, displacement, and dashes."""
         self.origin_x *= factor
         self.origin_y *= factor
-        self.delta_x *= factor
-        self.delta_y *= factor
+        self.delta_u *= factor
+        self.delta_v *= factor
         self.dashes = [d * factor for d in self.dashes]
-    
+
     def rotate(self, angle_deg):
         """Rotates the line family's angle and base point by the given degrees."""
         angle_rad = math.radians(angle_deg)
-        
-        # Rotate base point
+
+        # Rotate base point around (0,0)
         cos_a = math.cos(angle_rad)
         sin_a = math.sin(angle_rad)
         new_x = self.origin_x * cos_a - self.origin_y * sin_a
         new_y = self.origin_x * sin_a + self.origin_y * cos_a
         self.origin_x = new_x
         self.origin_y = new_y
-        
-        # Update angle
-        self._angle_rad = (self._angle_rad + angle_rad) % (2 * math.pi)
-        self.angle_deg = math.degrees(self._angle_rad)
 
-    def get_svg_path_segment(self):
-        """
-        Generates an SVG path string for a single pattern repetition cycle.
-        Returns commands like 'M 0 0 L 5 5 M 10 10 L 15 15'.
-        """
-        path = []
-        cursor_x, cursor_y = 0.0, 0.0
-        
-        # Continuous line
-        if not self.dashes:
-            length = 10.0 # Arbitrary length for continuous line visualization
-            end_x = length * math.cos(self._angle_rad)
-            end_y = length * math.sin(self._angle_rad)
-            return "M %s %s L %s %s" % (cursor_x, cursor_y, end_x, end_y)
+        # Update angle (Basis vectors vec_u/vec_v update automatically via property)
+        self.angle_deg = (self.angle_deg + angle_deg) % 360.0
+        self._angle_rad = math.radians(self.angle_deg)
 
-        # Dashed line
-        for dash in self.dashes:
-            length = abs(dash)
-            dx = length * math.cos(self._angle_rad)
-            dy = length * math.sin(self._angle_rad)
-            
-            new_x = cursor_x + dx
-            new_y = cursor_y + dy
-
-            if dash > 0:
-                # Positive dash: Line segment
-                if not path:
-                    # Start with a MoveTo command if this is the first segment
-                    path.append("M %s %s" % (cursor_x, cursor_y))
-                path.append("L %s %s" % (new_x, new_y))
-            elif dash < 0:
-                # Negative dash: Gap, move pen up and reposition
-                path.append("M %s %s" % (new_x, new_y))
-
-            cursor_x, cursor_y = new_x, new_y
-
-        return " ".join(path)
 
 class Pattern:
     """
     Represents a complete hatch pattern.
     """
-    def __init__(self, name, description, is_metric, pattern_type = "Drafting"):
+
+    def __init__(self, name, description, is_metric, pattern_type="Drafting"):
         """
         Initializes a Pattern instance.
-
         Args:
             name (str): The name of the pattern.
             description (str): The description of the pattern.
@@ -120,7 +108,7 @@ class Pattern:
         self.description = description
         self.is_metric = is_metric
         self.pattern_type = pattern_type
-        self.lines = [] # List of Line objects
+        self.lines = []  # List of Line objects
 
     def add_line(self, line):
         """Adds a Line to this pattern."""
@@ -136,25 +124,32 @@ class Pattern:
         for line in self.lines:
             line.rotate(angle_deg)
 
-    def estimate_scale(self, target_size, repetitions = 3.0):
+    def estimate_scale(self, target_size, repetitions=5.0):
         """
-        Calculates a scale factor to fit a certain number of pattern repetitions
-        within the target preview size.
+        Calculates a scale factor based primarily on perpendicular spacing (delta_v).
         """
-        max_displacement = 0.0
+        max_spacing = 0.0
+        max_length = 0.0
         for lf in self.lines:
-            max_displacement = max(max_displacement, abs(lf.delta_x))
-        
-        if max_displacement == 0 or repetitions == 0:
+            # Use delta_v (perp spacing) and total dash length for scale estimation
+            max_spacing = max(max_spacing, abs(lf.delta_v))
+            max_length = max(max_length, lf.get_length())
+
+        if max_spacing == 0 or repetitions == 0:
+            print("Scale: 1.0 (max space = {})".format(max_spacing))
             return 1.0
-            
-        return target_size / (repetitions * max_displacement)
 
+        # Ensure at least one full repetition
+        scale = target_size / max((repetitions * max_spacing), max_length)
+        # print("Scale: {}".format(scale))
+        return scale
 
-    def generate_drawing_instructions(self, width, height = None, scale = None, rotation_deg = 0.0):
+    def generate_drawing_instructions(
+        self, width, height=None, scale=None, rotation_deg=0.0
+    ):
         """
         Generates the line segments required to fill a rectangle with this pattern.
-        
+        Uses local vector basis logic to ensure consistent texture mapping.
         Args:
             width (float): The width of the rectangular area.
             height (float, optional): The height of the rectangular area. Defaults to width (square).
@@ -169,108 +164,201 @@ class Pattern:
 
         if height is None:
             height = width
-            
+
         max_size = max(width, height)
         current_scale = scale if scale is not None else self.estimate_scale(max_size)
 
-        # 1. Create a temporary deep copy to apply session-specific transformations
-        # This is a manual copy for IronPython 2.7 compatibility.
-        temp_pattern = Pattern(self.name, self.description, self.is_metric, self.pattern_type)
+        # 1. Create a temporary copy to apply session-specific transformations
+        temp_pattern = Pattern(
+            self.name, self.description, self.is_metric, self.pattern_type
+        )
         for lf in self.lines:
-            # Copy all primitive fields and the dashes list
-            temp_line = Line(lf.angle_deg, lf.origin_x, lf.origin_y, lf.delta_x, lf.delta_y, lf.dashes[:])
+            # Copy properties to new instance
+            temp_line = Line(
+                lf.angle_deg,
+                lf.origin_x,
+                lf.origin_y,
+                lf.delta_u,
+                lf.delta_v,
+                lf.dashes[:],
+            )
             temp_pattern.add_line(temp_line)
 
-        # 2. Apply session-specific rotation and scale to the temporary pattern
+        # 2. Apply session-specific rotation and scale
         if rotation_deg != 0.0:
             temp_pattern.rotate(rotation_deg)
         if current_scale != 1.0:
             temp_pattern.scale(current_scale)
 
-        # The bounding box is always axis-aligned from (0,0) to (width, height)
         all_lines = []
         bounds = (0, 0, width, height)
+        corners = [(0, 0), (width, 0), (0, height), (width, height)]
 
         for lf in temp_pattern.lines:
-            # Retrieve transformed properties from the temporary Line object
-            scaled_dx = lf.delta_x
-            scaled_dy = lf.delta_y
-            scaled_dashes = lf.dashes
-            angle_rad = lf._angle_rad
-            origin_x, origin_y = lf.origin_x, lf.origin_y # Transformed base point
+            # --- Vector Basis Logic ---
+            u = lf.vec_u
+            v = lf.vec_v
+            fam_offset = lf.get_family_offset()
 
-            # Define vectors for line direction and perpendicular displacement
-            cos_a = math.cos(angle_rad)
-            sin_a = math.sin(angle_rad)
-            line_dir_vec = (cos_a, sin_a)
-            delta_vec = (-sin_a * scaled_dx, cos_a * scaled_dx)
-            
-            # --- Geometric Projection to determine iteration range (i_min, i_max) ---
-            
-            perp_dir_vec = (-sin_a, cos_a)
-            max_proj = -float('inf')
-            min_proj = float('inf')
-            
-            # Project all four corners of the rectangular bounding box onto the perpendicular vector
-            corners = [(0, 0), (width, 0), (0, height), (width, height)]
-            
-            for corner_x, corner_y in corners:
-                # Vector from transformed origin to corner
-                vec_to_corner = (corner_x - origin_x, corner_y - origin_y)
-                # Projection: dot product
-                proj = vec_to_corner[0] * perp_dir_vec[0] + vec_to_corner[1] * perp_dir_vec[1]
-                min_proj = min(min_proj, proj)
-                max_proj = max(max_proj, proj)
-            
-            # Calculate iteration bounds
-            i_min, i_max = 0, 1 # Default if delta_x is zero
-            if scaled_dx != 0:
-                i_min = math.floor(min_proj / scaled_dx)
-                i_max = math.ceil(max_proj / scaled_dx)
-            
-            # Apply safety limit
-            if i_max - i_min > MAX_LINES_PER_FAMILY:
-                i_max = i_min + MAX_LINES_PER_FAMILY
-                print "Warning: Line family '%s' hit max line limit of %s." % (lf.angle_deg, MAX_LINES_PER_FAMILY)
+            # --- 3. Determine Line Family Range (k_min to k_max) ---
+            # We project the bounding box onto the V-axis (perpendicular axis).
+            # The line 'k' is located at distance: (Origin . V) + k * delta_v
 
+            # Project box corners onto V
+            v_projections = [c[0] * v[0] + c[1] * v[1] for c in corners]
+            min_v_proj = min(v_projections)
+            max_v_proj = max(v_projections)
 
-            for i in range(int(i_min), int(i_max)):
-                # Calculate the start point of this specific line iteration
-                start_point_x = origin_x + i * delta_vec[0]
-                start_point_y = origin_y + i * delta_vec[1]
+            # Project Origin onto V
+            origin_v = lf.origin_x * v[0] + lf.origin_y * v[1]
 
-                # Apply parallel displacement (stagger)
-                stagger_offset = i * scaled_dy
-                stagger_vec = (line_dir_vec[0] * stagger_offset, line_dir_vec[1] * stagger_offset)
-                start_point_x += stagger_vec[0]
-                start_point_y += stagger_vec[1]
-                
-                # --- Clipping ---
-                # Define a very long line segment guaranteed to cross the box
-                long_length = max_size * 2 # Use max_size to ensure coverage
-                p1_x = start_point_x - line_dir_vec[0] * long_length
-                p1_y = start_point_y - line_dir_vec[1] * long_length
-                p2_x = start_point_x + line_dir_vec[0] * long_length
-                p2_y = start_point_y + line_dir_vec[1] * long_length
+            # Calculate range of k indices that intersect the V-projection of the box
+            if abs(lf.delta_v) < 1e-9:
+                # Delta V is zero: all lines are collinear or it's a single line.
+                # Render just the base line (k=0).
+                k_min, k_max = 0, 0
+            else:
+                # Solve for k: min_v <= origin_v + k * delta_v <= max_v
+                val1 = (min_v_proj - origin_v) / lf.delta_v
+                val2 = (max_v_proj - origin_v) / lf.delta_v
+                k_min = math.floor(min(val1, val2))
+                k_max = math.ceil(max(val1, val2))
 
-                clipped_line = self._clip_line(p1_x, p1_y, p2_x, p2_y, bounds)
+            # Safety clamp for massive number of lines
+            if (k_max - k_min) > MAX_LINES_PER_FAMILY:
+                k_max = k_min + MAX_LINES_PER_FAMILY
+                # print "Warning: Hit max lines limit."
+            print(
+                "k min: {}, max: {}, angle: {}, offset: {}".format(
+                    k_min, k_max, lf.angle_deg, str(lf.get_family_offset())
+                )
+            )
 
-                if clipped_line:
-                    cx1, cy1, cx2, cy2 = clipped_line
-                    
-                    if not scaled_dashes:
+            # --- 4. Generate Segments for each line k ---
+            for k in range(int(k_min), int(k_max) + 1):
+                # Calculate "Pattern Origin" (P_k) for this specific line.
+                # This point is where the dash pattern starts (t=0) for line k.
+                # P_k = Origin + k * FamilyOffset
+                pk_x = lf.origin_x + k * fam_offset[0]
+                pk_y = lf.origin_y + k * fam_offset[1]
+
+                # --- Parametric Clipping ---
+                # We define the line as P(t) = P_k + t * U
+                # We find the 't' values where this line enters and exits the box (0,0,W,H).
+                # Inequalities:
+                #   0 <= Pkx + t*ux <= Width
+                #   0 <= Pky + t*uy <= Height
+
+                t_enter = -float("inf")
+                t_exit = float("inf")
+
+                # Check X bounds
+                if abs(u[0]) < 1e-9:
+                    # Vertical line
+                    if pk_x < 0 or pk_x > width:
+                        continue  # Outside X bounds
+                else:
+                    t1 = (0 - pk_x) / u[0]
+                    t2 = (width - pk_x) / u[0]
+                    t_enter = max(t_enter, min(t1, t2))
+                    t_exit = min(t_exit, max(t1, t2))
+
+                # Check Y bounds
+                if abs(u[1]) < 1e-9:
+                    # Horizontal line
+                    if pk_y < 0 or pk_y > height:
+                        continue  # Outside Y bounds
+                else:
+                    t1 = (0 - pk_y) / u[1]
+                    t2 = (height - pk_y) / u[1]
+                    t_enter = max(t_enter, min(t1, t2))
+                    t_exit = min(t_exit, max(t1, t2))
+
+                # If valid segment found
+                if t_enter <= t_exit:
+                    if not lf.dashes:
                         # Continuous line
-                        all_lines.append({'x1': cx1, 'y1': cy1, 'x2': cx2, 'y2': cy2})
+                        x1 = pk_x + t_enter * u[0]
+                        y1 = pk_y + t_enter * u[1]
+                        x2 = pk_x + t_exit * u[0]
+                        y2 = pk_y + t_exit * u[1]
+                        all_lines.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
                     else:
-                        # Dashed line: Delegate the dashing to a method
-                        all_lines.extend(self._get_dashed_segments(cx1, cy1, cx2, cy2, scaled_dashes))
+                        # Dashed line
+                        # Pass t_enter/t_exit relative to P_k so dashes align correctly
+                        segments = self._get_dashed_segments_basis(
+                            pk_x, pk_y, u, t_enter, t_exit, lf.dashes
+                        )
+                        all_lines.extend(segments)
 
         return all_lines
 
-    def get_bitmap(self, width, height, scale=None, background_color=None, pen_width = 1, line_color=None):
+    def _get_dashed_segments_basis(self, px, py, u, t_start, t_end, dashes):
+        """
+        Generates dashed segments along vector u starting from P(px, py).
+
+        Crucial: 't' represents distance from the Pattern Origin P_k, not the screen edge.
+        This ensures the texture doesn't 'swim' when the window is resized.
+        """
+        segments = []
+        loop_len = sum(abs(d) for d in dashes)
+        if loop_len == 0:
+            return []
+
+        current_t = t_start
+
+        while current_t < t_end:
+            # Determine phase in the dash cycle
+            # (current_t % loop_len) works correctly in Python even for negative numbers
+            cycle_phase = current_t % loop_len
+
+            # Find which dash in the definition covers this phase
+            dist_in_cycle = 0.0
+            active_dash_idx = 0
+
+            for idx, dash in enumerate(dashes):
+                dash_len = abs(dash)
+                if dist_in_cycle + dash_len > cycle_phase:
+                    active_dash_idx = idx
+                    break
+                dist_in_cycle += dash_len
+
+            # Calculate how much of the current dash is remaining
+            offset_in_dash = cycle_phase - dist_in_cycle
+            dash_val = dashes[active_dash_idx]
+            dash_len = abs(dash_val)
+            rem_dash = dash_len - offset_in_dash
+
+            # Step size is the smaller of: remaining dash OR distance to end of visible line
+            dist_to_end = t_end - current_t
+            step = min(rem_dash, dist_to_end)
+
+            # Draw if dash is positive (pen down)
+            if dash_val > 0 and step > 1e-9:
+                x1 = px + current_t * u[0]
+                y1 = py + current_t * u[1]
+                x2 = px + (current_t + step) * u[0]
+                y2 = py + (current_t + step) * u[1]
+                segments.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+
+            current_t += step
+            # Epsilon nudge to prevent infinite loops on tiny float errors
+            if step < 1e-9:
+                current_t += 1e-9
+
+        return segments
+
+    def get_bitmap(
+        self,
+        width,
+        height,
+        scale=None,
+        background_color=None,
+        pen_width=1,
+        line_color=None,
+    ):
         """
         Generates a System.Drawing.Bitmap of the hatch pattern.
-
         Args:
             width (int): The desired width of the bitmap.
             height (int): The desired height of the bitmap.
@@ -282,22 +370,24 @@ class Pattern:
                                                         Defaults to Color.Black.
 
         Returns:
-            System.Drawing.Bitmap: The generated bitmap object.
-        """
-
-        # .NET Imports for Bitmap Generation
-        # Only import if bitmap requested
+            System.Drawing.Bitmap: The generated bitmap object."""
         # .NET Imports
+        # Only import if bitmap requested
         import clr
-        clr.AddReference('System.Drawing')
-        from System.Drawing import Bitmap, Graphics, Pen, SolidBrush, Color, Drawing2D
-        from System.Drawing.Imaging import ImageFormat
 
-        # .NET Imports for WPF Bitmap Conversion
-        clr.AddReference('PresentationCore')
-        clr.AddReference('PresentationFramework')
-        from System.IO import MemoryStream
-        from System.Windows.Media.Imaging import BitmapImage, PngBitmapEncoder
+        try:
+            clr.AddReference("System.Drawing")
+            from System.Drawing import (
+                Bitmap,
+                Graphics,
+                Pen,
+                SolidBrush,
+                Color,
+                Drawing2D,
+            )
+        except:
+            print("System.Drawing not available.")
+            return None
 
         # Set default colors if not provided
         if background_color is None:
@@ -305,129 +395,53 @@ class Pattern:
         if line_color is None:
             line_color = Color.Black
 
-        # Create the bitmap and graphics objects
         bmp = Bitmap(width, height)
         gfx = Graphics.FromImage(bmp)
-
-        # Set rendering quality
         gfx.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
-
-        # Fill the background
         gfx.Clear(background_color)
+        pen = Pen(line_color, pen_width)
+        y_origin = height - 1
 
-        # Create the pen for drawing lines
-        pen = Pen(line_color, pen_width) # 1-pixel wide lines
-
-        # Use the vector logic to get line instructions
         lines = self.generate_drawing_instructions(width, height, scale)
 
         for line in lines:
-            # Draw each line onto the graphics object
             try:
-                gfx.DrawLine(pen, 
-                             int(round(line['x1'])), int(round(line['y1'])), 
-                             int(round(line['x2'])), int(round(line['y2'])))
+                gfx.DrawLine(
+                    pen,
+                    int(round(line["x1"])),
+                    int(round(y_origin - line["y1"])),
+                    int(round(line["x2"])),
+                    int(round(y_origin - line["y2"])),
+                )
             except Exception as e:
-                # Catch potential overflow errors if lines are excessively long
-                print("Warning: Error drawing line: {}".format(e))
+                pass
 
         # Clean up .NET objects
         pen.Dispose()
         gfx.Dispose()
-
         return bmp
 
-    def _clip_line(self, x1, y1, x2, y2, bounds):
-        """Clips a line segment to a rectangular boundary using Liang-Barsky-like logic."""
-        xmin, ymin, xmax, ymax = bounds
-        dx, dy = x2 - x1, y2 - y1
-        p = [-dx, dx, -dy, dy]
-        q = [x1 - xmin, xmax - x1, y1 - ymin, ymax - y1]
-        t0, t1 = 0.0, 1.0
-
-        for i in range(4):
-            if p[i] == 0:
-                if q[i] < 0:
-                    return None
-            else:
-                t = q[i] / p[i]
-                if p[i] < 0:
-                    t0 = max(t0, t)
-                else:
-                    t1 = min(t1, t)
-        
-        if t0 > t1:
-            return None
-
-        clipped_x1 = x1 + t0 * dx
-        clipped_y1 = y1 + t0 * dy
-        clipped_x2 = x1 + t1 * dx
-        clipped_y2 = y1 + t1 * dy
-        return (clipped_x1, clipped_y1, clipped_x2, clipped_y2)
-
-    def _get_dashed_segments(self, x1, y1, x2, y2, dashes):
-        """
-        Applies a dash pattern to a single line segment and returns the visible parts.
-        """
-        dashed_lines = []
-        dx, dy = x2 - x1, y2 - y1
-        line_length = math.sqrt(dx**2 + dy**2)
-        if line_length == 0:
-            return []
-        
-        # Normalize direction vector
-        if line_length > 0:
-            ux, uy = dx / line_length, dy / line_length
-        else:
-            return []
-
-        total_dash_pattern_length = sum(abs(d) for d in dashes)
-        current_pos = 0.0
-        
-        while current_pos < line_length:
-            for dash in dashes:
-                is_pen_down = dash >= 0
-                dash_len = abs(dash)
-
-                if current_pos >= line_length:
-                    break
-                
-                start_d = current_pos
-                end_d = min(current_pos + dash_len, line_length)
-
-                if is_pen_down and start_d < end_d:
-                    # Don't draw zero-length dots as lines
-                    if dash > 0:
-                        dash_x1 = x1 + start_d * ux
-                        dash_y1 = y1 + start_d * uy
-                        dash_x2 = x1 + end_d * ux
-                        dash_y2 = y1 + end_d * uy
-                        dashed_lines.append({'x1': dash_x1, 'y1': dash_y1, 'x2': dash_x2, 'y2': dash_y2})
-                
-                current_pos += dash_len
-
-        return dashed_lines
 
 class PatternSet:
     """
     Parses Autodesk .pat files into an ordered collection of Pattern objects.
-    (Previously PatParser)
     """
+
     def __init__(self, source=None):
         """Initializes the parser with an empty pattern list and name map."""
-        self.patterns = []    # Stores Pattern objects in file order
-        self.name_map = {}    # Maps name string to Pattern object
+        self.patterns = []
+        self.name_map = {}
         if source is not None:
             self.parse(source)
 
     def __iter__(self):
         """Allows iteration over the patterns in the order they were parsed."""
         return iter(self.patterns)
-        
+
     def __len__(self):
         """Returns the number of parsed patterns."""
         return len(self.patterns)
-        
+
     def __getitem__(self, name):
         """Allows accessing patterns by name (dictionary-style lookup)."""
         return self.name_map.get(name)
@@ -437,103 +451,100 @@ class PatternSet:
         Parses hatch patterns from a string, filepath, or stream.
 
         Args:
-            source (str or file-like object): The content to parse. Can be a 
+            source (str or file-like object): The content to parse. Can be a
                                               file path, a string containing PAT data,
                                               or an open file/stream object.
             is_metric (bool): True if pattern definition uses metric units.
         """
         content_stream = None
-        
+        should_close = False
+
         if isinstance(source, basestring):
             if os.path.exists(source):
-                # File path provided
-                try:
-                    content_stream = open(source, 'r')
-                except Exception, e:
-                    print "Error opening file %s: %s" % (source, str(e))
-                    return
+                content_stream = open(source, "r")
+                should_close = True
             else:
-                # Content string provided
                 content_stream = io.StringIO(source)
-        elif hasattr(source, 'read'):
-            # Stream/file-like object provided
+        elif hasattr(source, "read"):
             content_stream = source
         else:
-            print "Invalid source type for parsing."
+            print("Invalid source type for parsing.")
             return
 
         self._parse_stream(content_stream)
-        
-        # If we opened a file, close it
-        if isinstance(source, basestring) and os.path.exists(source):
+
+        if should_close:
             content_stream.close()
 
     def _parse_stream(self, content_stream):
         """Internal method to parse data from a stream."""
         # Read all lines into a list to support multi-pass processing (look-ahead)
         all_lines = [line.strip() for line in content_stream if line.strip()]
-        
-        # --- 1. Determine File-level Unit (is_metric) ---
-        is_metric = False # Default to Imperial
-        
+
         # Only check control lines at the very beginning of the file
+        is_metric = False
         for line in all_lines:
-            if line.upper().startswith(';%UNITS=MM'):
+            if line.upper().startswith(";%UNITS=MM"):
                 is_metric = True
                 break
-            # Stop looking for unit if we hit the first header line
-            if line.startswith('*'):
+            if line.startswith("*"):
                 break
 
-        # --- 2. Parse Patterns ---
         current_pattern = None
         current_type = None
 
-        # Reset pattern collections for a fresh parse
         self.patterns = []
         self.name_map = {}
 
         for line in all_lines:
-            if current_pattern and not current_type and line.upper().startswith(';TYPE='):
+            if (
+                current_pattern
+                and not current_type
+                and line.upper().startswith(";TYPE=")
+            ):
                 line_part = line.upper()[6:]
-                current_type = "Model" if line_part.startswith('MODEL') else 'Drafting'
+                current_type = "Model" if line_part.startswith("MODEL") else "Drafting"
                 continue
 
-            if line.startswith(';'):
+            if line.startswith(";"):
                 continue
-            
-            if line.startswith('*'):
+
+            if line.startswith("*"):
                 # This is a header line, start of a new pattern
-                parts = line[1:].split(',', 1)
+                parts = line[1:].split(",", 1)
                 name = parts[0].strip()
-                
                 description = parts[1].strip() if len(parts) > 1 else ""
-                pattern_type = current_type if current_type else 'Drafting'
+                pattern_type = current_type if current_type else "Drafting"
 
                 current_pattern = Pattern(name, description, is_metric, pattern_type)
-                
-                # Add to ordered list and name map
                 self.patterns.append(current_pattern)
                 self.name_map[name] = current_pattern
-                current_type = None # reset for next pattern
-                
+                current_type = None
+
             elif current_pattern:
                 # This is a data line for the current pattern
                 try:
                     # Filter out empty strings from split() before converting to float
-                    parts_str = [p.strip() for p in line.split(',')]
+                    parts_str = [p.strip() for p in line.split(",")]
                     parts = [float(p) for p in parts_str if p]
-                    
+
                     if len(parts) < 5:
-                        print "Warning: Skipping incomplete line in pattern '%s': %s" % (current_pattern.name, line)
                         continue
-                        
-                    angle, ox, oy, dx, dy = parts[0:5]
-                    dashes = parts[5:]
-                    line_family = Line(angle, ox, oy, dx, dy, dashes)
+
+                    # --- PARAMETER MAPPING ---
+                    # Standard PAT: Angle, X, Y, Delta-U (Parallel), Delta-V (Perp), Dashes
+                    angle, ox, oy = parts[0], parts[1], parts[2]
+                    delta_u, delta_v = parts[3], parts[4]
+                    # remove string of zeros as sometimes used for continuous lines
+                    dashes = [] if all(x == 0 for x in parts[5:]) else parts[5:]
+
+                    line_family = Line(angle, ox, oy, delta_u, delta_v, dashes)
                     current_pattern.add_line(line_family)
-                except Exception, e:
-                    print "Warning: Could not parse line for pattern '%s': %s (Error: %s)" % (current_pattern.name, line, str(e))
+                except Exception as e:
+                    print(
+                        "Warning: Could not parse line for pattern '%s': %s (Error: %s)"
+                        % (current_pattern.name, line, str(e))
+                    )
 
     def get_pattern(self, name):
         """Retrieves a parsed pattern by its name (alias for self[name])."""

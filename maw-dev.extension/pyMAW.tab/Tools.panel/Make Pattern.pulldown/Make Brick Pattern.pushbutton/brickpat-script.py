@@ -403,7 +403,7 @@ def make_brick_pattern():
             selected_pattern = settings.get(UI.selected_pattern_name)
             if not selected_pattern:
                 raise Exception("Could not find selected pattern data.")
-            template_prefix = ";%UNITS={units}\n;%VERSION=3.0\n; Generated using pyRevit Brick Pattern Maker\n; MAW 2025\n\n"
+            template_prefix = ";%UNITS={units}\n;%VERSION=3.0\n; Generated using pyRevit Brick Pattern Maker\n; MAW 2025\n;\n"
             template = template_prefix + selected_pattern["template"]
 
             # --- 2. Parse Dimensions ---
