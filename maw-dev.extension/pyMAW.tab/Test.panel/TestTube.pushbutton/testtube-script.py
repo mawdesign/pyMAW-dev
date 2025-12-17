@@ -1,195 +1,322 @@
 # -*- coding: utf-8 -*-
 """
-Test script for the 'pat_lib' library.
-
-This script imports the 'pat_lib' module from the extension's 'lib'
-folder and tests the bitmap generation and saving functionality.
+Script Launcher
+Scans the 'scripts' subfolder and presents a context menu of tools to run.
 """
-
-# pyRevit Imports
-from pyrevit import forms
-
-# Standard Library Imports
 import os
-import traceback
-
-# .NET Imports (for the ImageFormat, just in case)
+import os.path as op
+import sys
 import clr
-try:
-    clr.AddReference('System.Drawing')
-    from System.Drawing.Imaging import ImageFormat
-except Exception as e:
-    forms.alert("Failed to import System.Drawing.Imaging:\n{}".format(e),
-                title="Test Failed: .NET Import Error")
-    raise
+import re
+import subprocess # Added for opening explorer
 
-# --- Import the Library to be Tested ---
-try:
-    import pat_lib as Hatch
-except ImportError as e:
-    forms.alert("Failed to import 'pat_lib.py'.\n"
-                "Ensure 'pat_lib.py' is in your extension's 'lib' folder.\n\n"
-                "Error: {}".format(e),
-                title="Test Failed: Import Error")
-    raise
-except Exception as e:
-    forms.alert("An unknown error occurred importing 'pat_lib.py':\n{}"
-                .format(traceback.format_exc()),
-                title="Test Failed: Unknown Import Error")
-    raise
+# Import WPF assemblies for the ContextMenu
+clr.AddReference("PresentationFramework")
+clr.AddReference("PresentationCore")
+clr.AddReference("WindowsBase") 
+from System.Windows.Controls import ContextMenu, MenuItem, TextBlock, Separator
+from System.Windows.Threading import Dispatcher, DispatcherFrame
+from System.Windows import RoutedEventHandler
+from System.Windows.Input import Keyboard, Key, MouseButtonEventHandler # Required for Right Click
+
+from pyrevit import script, forms
+
+# Import the manager library
+import script_manager
+
+# --- Configuration ---
+SCRIPTS_SUBFOLDER = 'scripts'
+
+# --- Icons ---
+ICON_PYTHON = "🐍" 
+ICON_DYNAMO = "⚙️"
+ICON_UNKNOWN = "📄"
+ICON_NEW = "➕"
+
+# --- Templates ---
+NEW_SCRIPT_TEMPLATE = """# -*- coding: utf-8 -*-
+\"\"\"
+{script_name_proper}
+\"\"\"
+# # -------------- Standard Library Imports --------------
+# import os
+# import sys
+# import clr
+# import wpf
+
+# # -------------------- .NET Imports --------------------
+# clr.AddReference("System.Drawing")
+# clr.AddReference("PresentationFramework")
+# clr.AddReference("PresentationCore")
+# clr.AddReference("WindowsBase")
+
+# # ------------------ pyRevit Imports -------------------
+from pyrevit import script, forms
+from pyrevit import revit
+from pyrevit import DB, UI
 
 
-def run_pat_lib_test():
-    """
-    Runs the test for parsing a PAT string and saving a bitmap.
-    """
-    print("--- Starting pat_lib Test ---")
-    
-    # 1. Define a sample .pat file content as a string
-    sample_pat_data = """;%UNITS=MM
-;%VERSION=3.0
-;;Exported by pyMAW, based on script by Sean Page 2022
-;;https://forum.dynamobim.com/t/export-fill-pattern-pat-file-from-revit/83014
-;;
-*BRICK230X76X10ENGLISH_SL, BRICK_230x76x10ENGLISH_SL
-;%TYPE=MODEL
-0.0,0.0,81.0,0.0,86.0,0.0,0.0
-90.0,175.0,167.0,0.0,240.0,86.0,-86.0
-90.0,115.0,81.0,0.0,120.0,86.0,-86.0
-;;
-*BRICK230X76X10ENGLISH, BRICK_230x76x10ENGLISH
-;%TYPE=MODEL
-0.0,180.0,0.0,0.0,172.0,230.0,-10.0
-0.0,180.0,76.0,0.0,172.0,230.0,-10.0
-0.0,120.0,86.0,0.0,172.0,110.0,-10.0
-0.0,120.0,162.0,0.0,172.0,110.0,-10.0
-90.0,170.0,0.0,0.0,240.0,76.0,-96.0
-90.0,180.0,0.0,0.0,240.0,76.0,-96.0
-90.0,110.0,86.0,0.0,120.0,76.0,-96.0
-90.0,120.0,86.0,0.0,120.0,76.0,-96.0
-;;
-*BRICK230X76X10FLEMISH_SL, BRICK_230x76x10FLEMISH_SL
-;%TYPE=MODEL
-0.0,0.0,81.0,0.0,86.0,0.0,0.0
-90.0,115.0,81.0,86.0,180.0,86.0,-86.0
-90.0,355.0,81.0,86.0,180.0,86.0,-86.0
-;;
-*BRICK230X76X10FLEMISH, BRICK_230x76x10FLEMISH
-;%TYPE=MODEL
-0.0,180.0,0.0,180.0,86.0,110.0,-10.0,230,-10
-0.0,180.0,76.0,180.0,86.0,110.0,-10.0,230,-10
-90.0,170.0,0.0,86.0,180.0,76.0,-96.0
-90.0,180.0,0.0,86.0,180.0,76.0,-96.0
-90.0,290.0,0.0,86.0,180.0,76.0,-96.0
-90.0,300.0,0.0,86.0,180.0,76.0,-96.0
-;;
-*BRICK230X76X10STACKED_SL, BRICK_230x76x10STACKED_SL
-;%TYPE=MODEL
-0.0,0.0,81.0,0.0,86.0,0.0,0.0
-90.0,235.0,0.0,0.0,240.0,0.0,0.0
-;;
-*BRICK230X76X10STACKED, BRICK_230x76x10STACKED
-;%TYPE=MODEL
-0.0,0.0,0.0,0.0,86.0,230.0,-10.0
-0.0,0.0,76.0,0.0,86.0,230.0,-10.0
-90.0,0.0,0.0,0.0,240.0,76.0,-10.0
-90.0,230.0,0.0,0.0,240.0,76.0,-10.0
-;;
-*BRICK230X76X10STRETCHERHALF_SL, BRICK_230x76x10STRETCHERHALF_SL
-;%TYPE=MODEL
-0.0,0.0,81.0,0.0,86.0,0.0,0.0
-90.0,115.0,81.0,86.0,120.0,86.0,-86.0
-;;
-*BRICK230X76X10STRETCHERHALF, BRICK_230x76x10STRETCHERHALF
-;%TYPE=MODEL
-0.0,0.0,0.0,120.0,86.0,230.0,-10.0
-0.0,0.0,76.0,120.0,86.0,230.0,-10.0
-90.0,0.0,0.0,86.0,120.0,76.0,-96.0
-90.0,230.0,0.0,86.0,120.0,76.0,-96.0
-;;
-*BRICK230X76X10STRETCHERTHIRD_SL, BRICK_230x76x10STRETCHERTHIRD_SL
-;%TYPE=MODEL
-0.0,0.0,81.0,0.0,86.0
-90.0,75.0,81.0,0.0,240.0,86.0,-86.0
-90.0,235.0,167.0,0.0,240.0,86.0,-86.0
-;;
-*BRICK230X76X10STRETCHERTHIRD, BRICK_230x76x10STRETCHERTHIRD
-;%TYPE=MODEL
-0.0,0.0,0.0,0.0,172.0,230.0,-10.0
-0.0,0.0,76.0,0.0,172.0,230.0,-10.0
-0.0,80.0,86.0,0.0,172.0,230.0,-10.0
-0.0,80.0,162.0,0.0,172.0,230.0,-10.0
-90.0,0.0,0.0,0.0,240.0,76.0,-96.0
-90.0,230.0,0.0,0.0,240.0,76.0,-96.0
-90.0,70.0,86.0,0.0,240.0,76.0,-96.0
-90.0,80.0,86.0,0.0,240.0,76.0,-96.0
-;;
-*TILE_120x120OCTAGONAL_SL, Octagonal 120 x 120mm tiles with no grout 
-;%TYPE=MODEL 
-0.0,0.0,0.0,84.852787,84.852787,49.705618,-120.0
-0.0,0.0,49.705618,84.852787,84.852787,49.705618,-120.0
-90.0,0.0,0.0,84.852787,84.852787,49.705618,-120.0
-90.0,49.705618,0.0,84.852787,84.852787,49.705618,-120.0
-45.0,49.705618,49.705618,120.0,120.0,49.705618,-70.294381
--45.0,49.705618,0.0,120.0,120.0,49.705618,-70.294381
+def {script_name}():
+    forms.alert('This is the {script_name} script', title='{script_name_proper}', warn_icon=False)
+
+
+if __name__ == '__main__':
+    {script_name}()
 """
+
+class ScriptOption(object):
+    """Helper class to organize script options for the UI."""
+    def __init__(self, file_path):
+        self.path = file_path
+        self.filename = op.basename(file_path)
+        self.name, self.ext = op.splitext(self.filename)
+        self.ext = self.ext.lower()
+        
+    @property
+    def icon(self):
+        if self.ext == '.py':
+            return ICON_PYTHON
+        elif self.ext == '.dyn':
+            return ICON_DYNAMO
+        return ICON_UNKNOWN
+
+    @property
+    def title(self):
+        # "my_script_name" -> "My Script Name"
+        clean_name = self.name.replace('_', ' ').replace('-script', '')
+        return " ".join([word.capitalize() for word in clean_name.split()])
+
+def get_available_scripts(folder_path):
+    """Scans the folder for supported script files."""
+    if not op.exists(folder_path):
+        return []
+    
+    options = []
+    for f in os.listdir(folder_path):
+        full_path = op.join(folder_path, f)
+        if op.isfile(full_path):
+            ext = op.splitext(f)[1].lower()
+            if ext in ['.dyn', '.py']:
+                options.append(ScriptOption(full_path))
+    return options
+
+def create_new_script(target_dir):
+    """Prompts user for a name and creates a new python script."""
+    # 1. Ask for name
+    raw_name = forms.ask_for_string(
+        default='new_script_name',
+        prompt='Enter script name (snake_case preferred):',
+        title='Create New Python Script'
+    )
+    
+    if not raw_name:
+        return False
+
+    # 2. Strip extension if user typed it
+    if raw_name.lower().endswith('.py'):
+        raw_name = raw_name[:-3]
+
+    # 3. Sanitize Name (ensure valid python identifier / filename)
+    # Replace spaces with underscores, allow hyphens, lower case
+    script_name = re.sub(r'[^a-zA-Z0-9_-]', '', raw_name.replace(' ', '_')).lower()
+    
+    if not script_name:
+        forms.alert("Invalid script name provided.")
+        return False
+
+    # 4. Generate Proper Title
+    clean_name = script_name.replace('_', ' ').replace('-script', '')
+    script_name_proper = " ".join([word.capitalize() for word in clean_name.split()])
+
+    # 5. Prepare Content
+    content = NEW_SCRIPT_TEMPLATE.format(
+        script_name=script_name.replace('-', '_'), # Function names cannot have hyphens
+        script_name_proper=script_name_proper
+    )
+
+    # 6. Write File
+    file_path = op.join(target_dir, "{}.py".format(script_name))
+    
+    if op.exists(file_path):
+        forms.alert("A script with that name already exists.")
+        return False
 
     try:
-        # 2. Create a parser and parse the string data
-        print("Parsing pattern string...")
-        patterns = Hatch.PatternSet(sample_pat_data)
-
-        # 3. Get a the patterns
-        for brick_pattern in patterns:
-            print("Getting '{}' pattern...".format(brick_pattern.name))
+        with open(file_path, 'w') as f:
+            f.write(content)
         
-            if not brick_pattern:
-                forms.alert("Test failed: Could not find this pattern after parsing.",
-                            title="Test Failed: Parsing Error")
-                return
-
-            # 4. Generate a bitmap
-            print("Generating 200x200 bitmap with scale 0.5...")
-            pen_width = 1 if '_SL' in brick_pattern.name else 1
-            bmp = brick_pattern.get_bitmap(200, 200, 0.5, pen_width = pen_width)
-            
-            # 5. Define a save path (e.g., user's Downloads folder)
-            try:
-                # os.path.expanduser('~/Downloads') is the most reliable way
-                downloads_path = os.path.join(os.path.expanduser('~'), r'Downloads\patterns')
-                if not os.path.exists(downloads_path):
-                     # Fallback to user's home directory if Downloads doesn't exist
-                     downloads_path = os.path.expanduser('~')
-                
-                save_path = os.path.join(downloads_path, "{}_test.png".format(brick_pattern.name))
-            except Exception as e:
-                print("Error getting save path: {}".format(e))
-                # Fallback to a relative path
-                save_path = "pyrevit_pat_lib_test.png"
-            
-            # 6. Save the bitmap to a file
-            print("Saving bitmap to: {}".format(save_path))
-            bmp.Save(save_path, ImageFormat.Png)
-            bmp.Dispose()
-        
-        # 7. Report Success
-        print("Test successful!")
-        # forms.alert("Test Successful!\n\nBitmap saved to:\n{}".format(save_path),
-                    # title="pat_lib Test Complete")
-
+        forms.alert("Created: {}".format(op.basename(file_path)))
+        return file_path
     except Exception as e:
-        # 8. Report Failure
-        print("--- TEST FAILED ---")
-        print(traceback.format_exc())
-        print("-------------------")
-        forms.alert("The pat_lib test failed. See console for details.\n\n"
-                    "Error: {}".format(e),
-                    title="Test Failed: Runtime Error")
+        forms.alert("Failed to create script: {}".format(e))
+        return False
 
+def edit_script(targetpath=""):
+    logger = script.get_logger()
+    options = "-lpython"
+    exepath = ""
 
-# --- Main execution point ---
+    # get script editor path
+    dev_cfg = script.get_config("MAW-dev-tools")
+    exepath = dev_cfg.get_option("editorpath", "")
+
+    if not exepath:
+        # try get Notepad++ path
+        # (for users of pyMAW Notepad++ tools)
+        npp_cfg = script.get_config("Notepad++")
+        exepath = npp_cfg.get_option(
+            "notepadpath",
+            os.path.join(os.environ["ProgramFiles"], "Notepad++", "Notepad++.exe")
+        )
+
+    # open editor with file
+    if len(targetpath) > 0:
+        targetpath = '"' + os.path.realpath(targetpath) + '"'
+    if exepath and os.path.exists(exepath):
+        command = 'start "Notepad++" "{0}" {1} {2}'.format(exepath, options, targetpath)
+    else:
+        command = 'start notepad {0}'.format(targetpath)
+    logger.debug(command)
+    script.journal_write("pyMAW_Testtube", command)
+    os.system(command)
+
+def show_wpf_context_menu(script_options):
+    """
+    Creates and shows a blocking WPF ContextMenu at the mouse cursor.
+    Returns tuple: (selected_item, action_type)
+    action_type is 'run' (Left Click) or 'reveal' (Right Click)
+    """
+    # 1. Create the Menu
+    menu = ContextMenu()
+    
+    # A dictionary to hold the result
+    result = {'selected': None, 'action': None}
+    
+    # 2. Create a DispatcherFrame
+    frame = DispatcherFrame()
+
+    # --- Event Handlers ---
+    def on_left_click(sender, args):
+        result['selected'] = sender.Tag 
+        result['action'] = 'run'
+        if Keyboard.IsKeyDown(Key.LeftShift):
+            result['action'] = 'reveal'
+        frame.Continue = False 
+
+    def on_right_click(sender, args):
+        result['selected'] = sender.Tag
+        result['action'] = 'edit'
+        args.Handled = True # Prevent event bubbling
+        frame.Continue = False
+
+    def on_closed(sender, args):
+        frame.Continue = False
+
+    # --- Populate Menu with Existing Scripts ---
+    for script_opt in script_options:
+        item = MenuItem()
+        item.Header = script_opt.title
+        
+        icon_tb = TextBlock()
+        icon_tb.Text = script_opt.icon
+        item.Icon = icon_tb
+        
+        item.ToolTip = script_opt.filename + "\n\nRight-click to open in editor,\nShift-click to open folder."
+        item.Tag = script_opt 
+        
+        # Subscribe to Left Click
+        item.Click += RoutedEventHandler(on_left_click)
+        
+        # Subscribe to Right Click
+        item.PreviewMouseRightButtonDown += MouseButtonEventHandler(on_right_click)
+        
+        menu.Items.Add(item)
+
+    # --- Add Separator ---
+    if script_options:
+        menu.Items.Add(Separator())
+
+    # --- Add "Create New Script" Option ---
+    new_item = MenuItem()
+    new_item.Header = "Create New Script"
+    
+    new_icon = TextBlock()
+    new_icon.Text = ICON_NEW
+    new_item.Icon = new_icon
+    
+    new_item.ToolTip = "Create new pyRevit script\n\nRight-click to open in editor after creating."
+    new_item.Tag = "__CREATE_NEW__" 
+    # Subscribe to Left Click
+    new_item.Click += RoutedEventHandler(on_left_click)
+    
+    # Subscribe to Right Click
+    new_item.PreviewMouseRightButtonDown += MouseButtonEventHandler(on_right_click)
+    
+    menu.Items.Add(new_item)
+
+    # Subscribe to the Closed event
+    menu.Closed += RoutedEventHandler(on_closed)
+
+    # 3. Show the menu
+    menu.IsOpen = True
+
+    # 4. Start the message pump
+    Dispatcher.PushFrame(frame)
+
+    return result['selected'], result['action']
+
+def show_launcher():
+    # 1. Determine folder path
+    cmd_dir = script.get_script_path()
+    target_dir = op.join(cmd_dir, SCRIPTS_SUBFOLDER)
+    
+    # Ensure scripts folder exists
+    if not op.exists(target_dir):
+        try:
+            os.makedirs(target_dir)
+        except:
+            forms.alert("Could not create scripts folder at:\n{}".format(target_dir))
+            return
+
+    # 2. Get scripts
+    scripts = get_available_scripts(target_dir)
+    
+    # Sort scripts alphabetically
+    scripts.sort(key=lambda x: x.title)
+
+    # 3. Show Context Menu and get selection
+    selection, action = show_wpf_context_menu(scripts)
+
+    # 4. Handle Selection
+    if selection == "__CREATE_NEW__":
+        new_script = create_new_script(target_dir)
+        if new_script and action == 'reveal':
+            try:
+                subprocess.Popen(r'explorer "{}"'.format(new_script))
+            except Exception as e:
+                forms.alert("Could not open folder: {}".format(e))
+
+        elif new_script and action == 'edit':
+            edit_script(selection.path)
+        
+    elif selection:
+        # It's a ScriptOption object
+        if action == 'run':
+            script_manager.run_script(selection.path)
+            
+        elif action == 'edit':
+            edit_script(selection.path)
+            
+        elif action == 'reveal':
+            # Right Click Action: Open Folder and Select File
+            try:
+                subprocess.Popen(r'explorer /select,"{}"'.format(selection.path))
+            except Exception as e:
+                forms.alert("Could not open folder: {}".format(e))
+
 if __name__ == '__main__':
-    run_pat_lib_test()
+    show_launcher()
+
 
 
 

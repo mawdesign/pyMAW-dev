@@ -1,0 +1,108 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Concrete Texture Generator" Height="820" Width="950" 
+        WindowStartupLocation="CenterScreen"
+        Background="#333333">
+    
+    <Window.Resources>
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Margin" Value="0,5,0,0"/>
+        </Style>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#AAAAAA"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+        </Style>
+        <Style TargetType="Slider">
+            <Setter Property="Margin" Value="0,2,0,10"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="#444"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#666"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Margin="0,0,10,0">
+            <TextBlock Text="Concrete Parameters" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,15"/>
+
+            <Label Content="Pit Density (Threshold)"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderDensity, Path=Value, StringFormat=N3}" Width="40"/>
+                <Slider Name="sliderDensity" Minimum="0.90" Maximum="0.999" Value="0.97" SmallChange="0.001" LargeChange="0.01" IsSnapToTickEnabled="True" TickFrequency="0.001"/>
+            </DockPanel>
+
+            <Label Content="Pit Depth"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderDepth, Path=Value, StringFormat=N2}" Width="40"/>
+                <Slider Name="sliderDepth" Minimum="0.0" Maximum="1.0" Value="0.20" TickFrequency="0.05"/>
+            </DockPanel>
+            
+            <Separator Margin="0,10,0,0" Background="#444"/>
+
+            <Label Content="Base Undulation Depth"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderBaseDepth, Path=Value, StringFormat=N2}" Width="40"/>
+                <Slider Name="sliderBaseDepth" Minimum="0.0" Maximum="1.0" Value="0.55" TickFrequency="0.05"/>
+            </DockPanel>
+
+            <Label Content="Trowel Flattening (Flat Tops)"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderTrowel, Path=Value, StringFormat=N2}" Width="40"/>
+                <Slider Name="sliderTrowel" Minimum="0.0" Maximum="1.0" Value="0.0" TickFrequency="0.1"/>
+            </DockPanel>
+            <TextBlock Text="Boosts height and clamps to White" FontSize="10" FontStyle="Italic" Margin="0,-5,0,5"/>
+
+            <Label Content="Fine Grain Strength"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderGrain, Path=Value, StringFormat=N2}" Width="40"/>
+                <Slider Name="sliderGrain" Minimum="0.0" Maximum="1.0" Value="0.35" TickFrequency="0.05"/>
+            </DockPanel>
+
+            <Label Content="Pattern Scale"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderScale, Path=Value, StringFormat=N1}" Width="40"/>
+                <Slider Name="sliderScale" Minimum="0.5" Maximum="10.0" Value="5.0" TickFrequency="0.1"/>
+            </DockPanel>
+            
+            <Separator Margin="0,10,0,0" Background="#444"/>
+
+            <Label Content="Normal Map Strength"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ElementName=sliderNormal, Path=Value, StringFormat=N1}" Width="40"/>
+                <Slider Name="sliderNormal" Minimum="0.5" Maximum="10.0" Value="3.0" TickFrequency="0.5"/>
+            </DockPanel>
+
+            <Label Content="Dimensions (Width x Height)"/>
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                <TextBox Name="txtWidth" Text="512" Width="60"/>
+                <TextBlock Text="x" VerticalAlignment="Center" Margin="10,0" Foreground="White"/>
+                <TextBox Name="txtHeight" Text="256" Width="60"/>
+            </StackPanel>
+
+            <Button Name="btnUpdate" Content="UPDATE TEXTURE" Height="40" Margin="0,20,0,0" FontWeight="Bold" Background="#007ACC" Foreground="White"/>
+            <Button Name="btnSave" Content="SAVE IMAGE" Height="30" Margin="0,10,0,0" FontWeight="Bold" Background="#444" Foreground="White"/>
+            
+            <StackPanel Orientation="Vertical" Margin="0,10,0,0">
+                <TextBlock Name="statusText" Text="Ready" HorizontalAlignment="Center" FontSize="11"/>
+                <TextBlock Name="timeText" Text="Time: --" HorizontalAlignment="Center" FontSize="11" Foreground="#00CC00" Margin="0,5,0,0"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Column="1" BorderBrush="#555" BorderThickness="1" Background="#222">
+            <Grid>
+                <Image Name="imgPreview" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                <TextBlock Name="placeholderText" Text="Click Update to generate..." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#666"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

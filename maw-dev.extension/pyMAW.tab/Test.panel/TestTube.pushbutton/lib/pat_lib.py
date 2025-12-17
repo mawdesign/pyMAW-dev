@@ -228,11 +228,6 @@ class Pattern:
             if (k_max - k_min) > MAX_LINES_PER_FAMILY:
                 k_max = k_min + MAX_LINES_PER_FAMILY
                 # print "Warning: Hit max lines limit."
-            print(
-                "k min: {}, max: {}, angle: {}, offset: {}".format(
-                    k_min, k_max, lf.angle_deg, str(lf.get_family_offset())
-                )
-            )
 
             # --- 4. Generate Segments for each line k ---
             for k in range(int(k_min), int(k_max) + 1):
@@ -356,6 +351,8 @@ class Pattern:
         background_color=None,
         pen_width=1,
         line_color=None,
+        border_width=0,
+        border_color=None,
     ):
         """
         Generates a System.Drawing.Bitmap of the hatch pattern.
@@ -412,6 +409,29 @@ class Pattern:
                     int(round(y_origin - line["y1"])),
                     int(round(line["x2"])),
                     int(round(y_origin - line["y2"])),
+                )
+            except Exception as e:
+                pass
+
+        # Draw border
+        if border_width > 0:
+            # Set the graphics settings for no anti-aliasing (pixel-perfect drawing)
+            gfx.SmoothingMode = Drawing2D.SmoothingMode.None
+            gfx.PixelOffsetMode = Drawing2D.PixelOffsetMode.None
+
+            rect_x = border_width // 2
+            rect_y = border_width // 2
+            rect_width = width - border_width
+            rect_height = height - border_width
+
+            if border_color is None:
+                border_color = line_color
+            pen = Pen(border_color, float(border_width))
+            border_width = 2.0*(border_width - 1)
+            try:
+                gfx.DrawRectangle(
+                    pen,
+                    rect_x, rect_y, rect_width, rect_height,
                 )
             except Exception as e:
                 pass
