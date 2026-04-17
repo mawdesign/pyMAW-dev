@@ -662,7 +662,7 @@ class RoofingForm(Window):
 
         # Get unit selection from UI and save if it changed
         is_metric_ui = self.MetricRadioButton.IsChecked
-        if is_metric_ui != IS_METRIC or CONFIG.get_option("metric", None) != IS_METRIC:
+        if is_metric_ui != IS_METRIC or CONFIG.get_option("metric", "not set") != IS_METRIC:
             CONFIG.set_option("Metric", is_metric_ui)
             script.save_config()
             IS_METRIC = is_metric_ui  # Update global for this session
