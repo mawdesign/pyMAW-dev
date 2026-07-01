@@ -46,6 +46,13 @@ def safe_get_fam_name(elem):
         param = elem.get_Parameter(DB.BuiltInParameter.SYMBOL_FAMILY_NAME_PARAM)
         return param.AsString() if param else "System Family"
 
+def legend_tag(pairs):
+    """
+    Dummy function for future integration with the tagging library module.
+    Expected to populate annotation parameters based on the associated legend component.
+    :param pairs: List of tuples -> [(legend_component_instance, generic_annotation_instance), ...]
+    """
+    pass
 
 def legend_components():
     # 1. Check if Active View is a Legend View
@@ -165,6 +172,25 @@ def legend_components():
     except Exception:
         # User canceled the point picking operation (e.g. pressed ESC)
         sys.exit()
+        
+    # 4.5 Prompt user for the Generic Annotation type to use as a tag
+    anno_types = DB.FilteredElementCollector(doc).OfCategory(DB.BuiltInCategory.OST_GenericAnnotation).WhereElementIsElementType().ToElements()
+    if not anno_types:
+        forms.alert("No Generic Annotation types found. Please load one to use as a tag.", exitscript=True)
+
+    anno_type_names = ["{} : {}".format(safe_get_fam_name(at), safe_get_name(at)) for at in anno_types]
+    anno_type_names.sort()
+
+    selected_anno_name = forms.SelectFromList.show(
+        anno_type_names,
+        title='Select Generic Annotation for Tagging',
+        button_name='Select',
+        multiselect=False
+    )
+    if not selected_anno_name:
+        sys.exit()
+
+    selected_anno_type = next((at for at in anno_types if "{} : {}".format(safe_get_fam_name(at), safe_get_name(at)) == selected_anno_name), None)
     
     # 5. Get all Types for the selected Category
     element_types = DB.FilteredElementCollector(doc) \
@@ -174,29 +200,6 @@ def legend_components():
         
     if not element_types:
         forms.alert("No types found for the category '{}'.".format(selected_cat_name), exitscript=True)
-        
-    # Get all placed instances to count them securely by Integer Value
-    all_instances = DB.FilteredElementCollector(doc) \
-        .OfCategoryId(selected_category.Id) \
-        .WhereElementIsNotElementType() \
-        .ToElements()
-        
-    instance_counts = {}
-    for inst in all_instances:
-        type_id = inst.GetTypeId()
-        if type_id != DB.ElementId.InvalidElementId:
-            tid_val = type_id.IntegerValue
-            if tid_val not in instance_counts:
-                instance_counts[tid_val] = 0
-            instance_counts[tid_val] += 1
-            
-    # Get a default Text Note Type to use for the labels
-    default_text_type = DB.FilteredElementCollector(doc) \
-        .OfClass(DB.TextNoteType) \
-        .FirstElement()
-        
-    if not default_text_type:
-        forms.alert("No Text Note Types found in the model. Please create one to use this tool.", exitscript=True)
 
     # 6. Group Types by Family Name
     families_dict = {}
@@ -222,6 +225,7 @@ def legend_components():
     placed_count = 0
     errors = 0
     error_logs = []
+    legend_anno_pairs = []
     
     with revit.Transaction("Place Legend Components - {}".format(selected_cat_name)):
         row_idx = 0
@@ -252,7 +256,7 @@ def legend_components():
                             if param and not param.IsReadOnly:
                                 param.Set(elem_type.Id)
                                 
-                                # Force view representation to Selected View
+                                # Force view representation to Plan View
                                 view_param = new_comp.get_Parameter(DB.BuiltInParameter.LEGEND_COMPONENT_VIEW)
                                 if view_param and not view_param.IsReadOnly:
                                     try:
@@ -276,24 +280,20 @@ def legend_components():
                                 
                                 placed_count += 1
                                 
-                                # Add text note under the component
-                                count = instance_counts.get(elem_type.Id.IntegerValue, 0)
-                                text_str = u"Family: {}\nType: {}\nInstances: {}".format(fam_name, safe_get_name(elem_type), count)
-                                
-                                # Place text below the legend component's origin
+                                # Place Generic Annotation under the component
                                 text_pt = target_pt - DB.XYZ(0, text_offset, 0)
                                 
                                 try:
-                                    # Use TextNoteOptions to avoid IronPython overload ambiguity in newer Revit APIs
-                                    if hasattr(DB, "TextNoteOptions"):
-                                        options = DB.TextNoteOptions(default_text_type.Id)
-                                        options.HorizontalAlignment = DB.HorizontalTextAlignment.Center
-                                        DB.TextNote.Create(doc, doc.ActiveView.Id, text_pt, text_str, options)
-                                    else:
-                                        DB.TextNote.Create(doc, doc.ActiveView.Id, text_pt, text_str, default_text_type.Id)
-                                except Exception as text_e:
+                                    # Ensure the family symbol is active in the project before placement
+                                    if not selected_anno_type.IsActive:
+                                        selected_anno_type.Activate()
+                                        doc.Regenerate()
+                                        
+                                    new_anno = doc.Create.NewFamilyInstance(text_pt, selected_anno_type, doc.ActiveView)
+                                    legend_anno_pairs.append((new_comp, new_anno))
+                                except Exception as anno_e:
                                     import traceback
-                                    err_msg = "Failed to place text note for {}:\n{}".format(safe_get_name(elem_type), traceback.format_exc())
+                                    err_msg = "Failed to place annotation for {}:\n{}".format(safe_get_name(elem_type), traceback.format_exc())
                                     logger.debug(err_msg)
                                     error_logs.append(err_msg)
                                     
@@ -365,6 +365,10 @@ def legend_components():
                 
                 # Increment row index after a chunk so the next chunk (or next family) drops down a row
                 row_idx += 1
+                
+        # Call the tagging function inside the transaction to allow it to update parameters
+        if legend_anno_pairs:
+            legend_tag(legend_anno_pairs)
                     
     # 8. Finish and notify
     if error_logs:
