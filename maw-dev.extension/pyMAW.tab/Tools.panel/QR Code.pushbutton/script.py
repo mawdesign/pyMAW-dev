@@ -1,7 +1,6 @@
 # -*- coding: UTF-8 -*-
 from pyrevit import forms
 from pyrevit import script
-import sys
 import pyqrcode
 
 qrchars = " ▀▄█"  # ASCII box drawing
@@ -29,7 +28,7 @@ for i in range(0, len(qr.code), 2):
         row += qrchars[char]
     qrtext.append(row)
 
-print("\r\n".join(qrtext).replace(" ", u"\u00A0"))
+print("\r\n".join(qrtext).replace(" ", "\u00a0"))
 print("\r\nQR Code copied to clipboard, paste into a text field to view.")
 
 script.clipboard_copy("\r\n".join(qrtext))

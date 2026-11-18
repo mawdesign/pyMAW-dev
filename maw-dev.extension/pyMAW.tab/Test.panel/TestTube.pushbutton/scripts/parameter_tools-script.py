@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Parameter Tools
-"""
+"""Parameter Tools."""
 # # -------------- Standard Library Imports --------------
 # import os
 # import sys
@@ -15,14 +13,16 @@ Parameter Tools
 # clr.AddReference("WindowsBase")
 
 # # ------------------ pyRevit Imports -------------------
-from pyrevit import script, forms
-from pyrevit import revit
-from pyrevit import DB, UI
+from pyrevit import forms
 
 
 def parameter_tools_script():
-    forms.alert('This is the parameter_tools_script script', title='Parameter Tools', warn_icon=False)
+    forms.alert(
+        "This is the parameter_tools_script script",
+        title="Parameter Tools",
+        warn_icon=False,
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parameter_tools_script()

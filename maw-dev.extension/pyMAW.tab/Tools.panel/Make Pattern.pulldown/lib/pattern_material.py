@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-Shared library for creating and updating Revit Materials,
-specifically for applying surface patterns and appearance assets
-like bump maps with real-world scaling.
-"""
+"""Shared library for creating and updating Revit Materials, specifically for applying surface patterns and appearance assets like bump maps with real-world scaling."""
 
 # pyRevit Imports
-from pyrevit import revit, script, forms, DB
+from pyrevit import revit, forms, DB
 from pyrevit.revit.db.transaction import Transaction
 
 # .NET Imports
 import clr
 import System
-from System.Collections.Generic import IList
 import traceback  # <--- ADDED FOR DETAILED ERROR LOGGING
 
 clr.AddReference("System.Core")
@@ -29,11 +24,10 @@ def _get_material_by_name(doc, name):
 
 
 def _find_generic_asset_template(doc):
-    """
-    Finds a 'Generic' Asset to use as a template for creating
-    new Appearance Assets.
+    """Finds a 'Generic' Asset to use as a template for creating new Appearance Assets.
+
     Searches Document assets first, then Application (library) assets.
-    (Based on logic from material_tools.py)
+    (Based on logic from material_tools.py).
     """
     # 1. Search Document Assets
     doc_assets = [
@@ -65,11 +59,10 @@ def _find_generic_asset_template(doc):
 
 
 def _create_new_appearance_asset(doc, asset_name):
-    """
-    Creates a new AppearanceAssetElement by finding a "Generic" template
-    and using it as a base.
+    """Creates a new AppearanceAssetElement by finding a "Generic" template and using it as a base.
+
     Returns the ElementId of the new asset.
-    (Based on logic from material_tools.py)
+    (Based on logic from material_tools.py).
     """
     # Find a "Generic" asset to use as a template
     generic_asset_template = _find_generic_asset_template(doc)
@@ -98,10 +91,7 @@ def create_or_update_material(
     texture_real_world_width_int,
     texture_real_world_height_int,
 ):
-    """
-    Creates a new material or updates an existing one with graphics
-    and appearance properties.
-    """
+    """Creates a new material or updates an existing one with graphics and appearance properties."""
     if not bump_map_path or not System.IO.File.Exists(bump_map_path):
         return None, "Bump map file not found at path: {}".format(bump_map_path)
 
@@ -115,19 +105,21 @@ def create_or_update_material(
 
         # All modifications, including material creation, must be inside.
         with Transaction("Create/Update Material: " + material_name) as rvt_transaction:
-
             if not material:
                 material_id = DB.Material.Create(doc, material_name)
                 material = doc.GetElement(material_id)
                 is_new_material = True
 
             # --- 2. Set Graphics Properties ---
+            material.UseRenderAppearanceForShading = (
+                False  # For now so we can set the color property
+            )
             material.Color = material_color
+            # material.UseRenderAppearanceForShading = True
             material.SurfaceForegroundPatternId = surface_pattern_element.Id
             # Set pattern color to black (common for roofing)
             material.SurfaceForegroundPatternColor = DB.Color(0, 0, 0)
             material.Transparency = 0
-            material.UseRenderAppearanceForShading = True
 
             # --- 3. Get or Create Appearance Asset ---
             appearance_asset_id = material.AppearanceAssetId
@@ -143,7 +135,7 @@ def create_or_update_material(
                     return None, "Failed to create new appearance asset."
 
             appearance_asset_elem = doc.GetElement(appearance_asset_id)
-            rendering_asset = appearance_asset_elem.GetRenderingAsset()
+            appearance_asset_elem.GetRenderingAsset()
 
             # --- 4. Edit the Appearance Asset (The Hard Part) ---
             with DB.Visual.AppearanceAssetEditScope(doc) as edit_scope:
@@ -166,6 +158,12 @@ def create_or_update_material(
                 )
                 if prop_double and prop_double.IsEditable:
                     prop_double.Value = 0.0
+
+                prop_double = editable_asset.FindByName(
+                    DB.Visual.Generic.GenericBumpAmount
+                )
+                if prop_double and prop_double.IsEditable:
+                    prop_double.Value = 3.0
 
                 prop_double = editable_asset.FindByName(
                     DB.Visual.Generic.GenericTransparency

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Shared library for handling pattern generation configuration.
+"""Shared library for handling pattern generation configuration.
 
 Reads and writes to a 'pattern_settings.ini' file and provides
 a simple editor UI.
@@ -57,9 +56,9 @@ CONFIG_FILE_NAME = "pattern_settings.ini"
 
 
 def _find_config_path(script_path):
-    """
-    Finds the config file in the script's folder or one level up.
-    Returns (path_to_config_file, is_general) or (None, None)
+    """Finds the config file in the script's folder or one level up.
+
+    Returns (path_to_config_file, is_general) or (None, None).
     """
     specific_path = os.path.join(script_path, CONFIG_FILE_NAME)
     general_path = os.path.abspath(os.path.join(script_path, "..", CONFIG_FILE_NAME))
@@ -93,10 +92,7 @@ def load_config(script_path):
 
 
 def get_template(config, section, key):
-    """
-    Gets a specific naming template from the config,
-    or falls back to the default.
-    """
+    """Gets a specific naming template from the config, or falls back to the default."""
     if config and config.has_section(section) and config.has_option(section, key):
         return config.get(section, key)
     else:
@@ -108,9 +104,7 @@ def get_template(config, section, key):
 
 
 def _generate_ini_text(sections_to_include):
-    """
-    Generates INI-formatted text for the given sections from defaults.
-    """
+    """Generates INI-formatted text for the given sections from defaults."""
     s_io = StringIO()  # Use the imported StringIO
     if not sections_to_include:  # If empty, include all
         sections_to_include = DEFAULT_TEMPLATES.keys()
@@ -125,9 +119,7 @@ def _generate_ini_text(sections_to_include):
 
 
 class ConfigEditorWindow(Window):
-    """
-    A simple WPF window to edit the .ini file contents.
-    """
+    """A simple WPF window to edit the .ini file contents."""
 
     def __init__(self, xaml_file_stream, initial_text, save_path):
         wpf.LoadComponent(self, xaml_file_stream)  # Load from stream object
@@ -184,11 +176,9 @@ class ConfigEditorWindow(Window):
 
 
 def edit_config(script_path, section_name):
-    """
-    Opens an editor for the 'pattern_settings.ini' file.
-    """
+    """Opens an editor for the 'pattern_settings.ini' file."""
     # Define the XAML for the editor window
-    XAML = """
+    xaml = """
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Pattern Naming Config Editor" Height="600" Width="600"
@@ -269,10 +259,10 @@ def edit_config(script_path, section_name):
 
     # --- Load XAML from a .NET stream ---
     # Convert the Python string to a .NET MemoryStream
-    xaml_bytes = Encoding.UTF8.GetBytes(XAML)
+    xaml_bytes = Encoding.UTF8.GetBytes(xaml)
     xaml_stream = MemoryStream(xaml_bytes)
     xaml_stream.Seek(0, SeekOrigin.Begin)
 
     # Show the editor window
     # Pass the .NET stream, not a string or StringIO
-    editor = ConfigEditorWindow(xaml_stream, initial_text, save_path)
+    ConfigEditorWindow(xaml_stream, initial_text, save_path)

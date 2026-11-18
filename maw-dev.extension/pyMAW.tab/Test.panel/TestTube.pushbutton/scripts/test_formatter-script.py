@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Test Formatter
-"""
+"""Test Formatter."""
 # # -------------- Standard Library Imports --------------
 # import os
 # import sys
@@ -15,14 +13,16 @@ Test Formatter
 # clr.AddReference("WindowsBase")
 
 # # ------------------ pyRevit Imports -------------------
-from pyrevit import script, forms
-from pyrevit import revit
-from pyrevit import DB, UI
+from pyrevit import forms
 
 
 def test_formatter_script():
-    forms.alert('This is the test_formatter_script script', title='Test Formatter', warn_icon=False)
+    forms.alert(
+        "This is the test_formatter_script script",
+        title="Test Formatter",
+        warn_icon=False,
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_formatter_script()

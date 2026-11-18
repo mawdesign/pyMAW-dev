@@ -1,0 +1,203 @@
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Rename Material Assets"
+    Height="700"
+    Width="1200">
+
+    <Grid Margin="10">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel
+            Orientation="Horizontal"
+            Grid.Row="0">
+
+            <Button Name="btnAll"
+                    Content="Select All"
+                    Width="100"
+                    Margin="0,0,0,5"/>
+
+            <Button Name="btnNone"
+                    Content="Select None"
+                    Width="100"
+                    Margin="5,0,0,5"/>
+
+            <Button Name="btnNotShared"
+                    Content="Select All Not Shared"
+                    Width="120"
+                    Margin="5,0,0,5"/>
+
+            <Button Name="btnEdited"
+                    Content="Select All Edited"
+                    Width="120"
+                    Margin="5,0,0,5"/>
+
+            <Button Name="btnHideUnselected"
+                    Content="Hide Unselected"
+                    Width="100"
+                    Margin="5,0,0,5"/>
+        </StackPanel>
+
+        <DataGrid
+            Name="dgItems"
+            Grid.Row="1"
+            AutoGenerateColumns="False"
+            CanUserAddRows="False">
+
+		<DataGrid.CellStyle>
+			<Style TargetType="DataGridCell">
+				<Setter Property="VerticalContentAlignment"
+						Value="Center"/>
+			</Style>
+		</DataGrid.CellStyle>
+
+			<DataGrid.Columns>
+
+				<!-- Selection -->
+				<DataGridTemplateColumn
+					Header=""
+					Width="40"
+					CanUserSort="False">
+
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate>
+							<CheckBox
+								IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+								IsEnabled="{Binding IsSelectable}"
+								Click="SelectionCheckbox_Click"
+								HorizontalAlignment="Center"
+								VerticalAlignment="Center"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+
+				</DataGridTemplateColumn>
+
+
+				<!-- Material -->
+				<DataGridTextColumn
+					Header="Material"
+					Binding="{Binding MaterialName}"
+					Width="*"
+					IsReadOnly="True">
+
+					<DataGridTextColumn.ElementStyle>
+						<Style TargetType="TextBlock">
+							<Setter Property="Foreground"
+									Value="{Binding AssetNameColour}"/>
+							<Setter Property="VerticalAlignment"
+									Value="Center"/>
+						</Style>
+					</DataGridTextColumn.ElementStyle>
+
+				</DataGridTextColumn>
+
+
+				<!-- Status -->
+				<DataGridTemplateColumn
+					Header=""
+					Width="30">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button 
+                            Height = "25" Width = "25"
+                                Tag="{Binding}"
+                                Click="CopyName_Click"
+                                ToolTip="Copy Material Name to Appearance Asset" >
+                                <TextBlock FontFamily="Segoe Fluent Icons" 
+                                    Text="{Binding CopyIcon}" 
+                                   FontSize="16" 
+                                   VerticalAlignment="Center" 
+                                   HorizontalAlignment="Center"/>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
+
+
+				<!-- Status -->
+				<DataGridTemplateColumn
+					Header=""
+					Width="30"
+					SortMemberPath="Status">
+
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate>
+
+							<Border
+								Background="{Binding StatusColour}"
+								HorizontalAlignment="Stretch"
+								VerticalAlignment="Stretch"
+								Margin="-1 -1 -2 -1">
+
+								<TextBlock
+									Text="{Binding StatusIcon}"
+									Foreground="Black"
+									ToolTip="{Binding StatusToolTip}"
+									FontFamily="Segoe Fluent Icons"
+									FontSize="16"
+									HorizontalAlignment="Center"
+									VerticalAlignment="Center"/>
+
+							</Border>
+
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+
+				</DataGridTemplateColumn>
+
+
+				<!-- Asset Name -->
+				<DataGridTextColumn
+					Header="Appearance Asset"
+					Binding="{Binding AssetName,
+                      Mode=TwoWay,
+                      UpdateSourceTrigger=PropertyChanged}"
+					Width="*">
+
+					<DataGridTextColumn.ElementStyle>
+						<Style TargetType="TextBlock">
+							<Setter Property="Foreground"
+									Value="{Binding AssetNameColour}"/>
+							<Setter Property="VerticalAlignment"
+									Value="Center"/>
+						</Style>
+					</DataGridTextColumn.ElementStyle>
+
+					<DataGridTextColumn.EditingElementStyle>
+						<Style TargetType="TextBox">
+							<Setter Property="IsReadOnly"
+									Value="{Binding IsLocked}"/>
+						</Style>
+					</DataGridTextColumn.EditingElementStyle>
+
+				</DataGridTextColumn>
+
+			</DataGrid.Columns>
+
+        </DataGrid>
+
+        <StackPanel
+            Orientation="Horizontal"
+            Grid.Row="2"
+            HorizontalAlignment="Right">
+
+            <Button Name="btnOK"
+                    Content="OK"
+                    Width="100"
+                    Margin="5,5,0,0"/>
+
+            <Button Name="btnCancel"
+                    Content="Cancel"
+                    Width="100"
+                    Margin="5,5,0,0"/>
+
+        </StackPanel>
+
+    </Grid>
+
+</Window>

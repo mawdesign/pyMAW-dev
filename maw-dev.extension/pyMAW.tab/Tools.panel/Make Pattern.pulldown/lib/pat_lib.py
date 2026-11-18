@@ -3,27 +3,26 @@ import clr
 import System
 
 # .NET Imports for Bitmap Generation
-clr.AddReference('System.Drawing')
-from System.Drawing import Bitmap, Graphics, Pen, SolidBrush, Color, Drawing2D
+clr.AddReference("System.Drawing")
+from System.Drawing import Bitmap, Graphics, Pen, Color, Drawing2D
 from System.Drawing.Imaging import ImageFormat
 
 # .NET Imports for WPF Bitmap Conversion
-clr.AddReference('PresentationCore')
-clr.AddReference('PresentationFramework')
+clr.AddReference("PresentationCore")
+clr.AddReference("PresentationFramework")
 from System.IO import MemoryStream
-from System.Windows.Media.Imaging import BitmapImage, PngBitmapEncoder
+from System.Windows.Media.Imaging import BitmapImage
 
 
 class PatternLineFamily:
-    """
-    Represents a single line family definition from a .pat file.
-    
+    """Represents a single line family definition from a .pat file.
+
     This class is a simple data container for one line of a pattern definition,
     describing an infinite set of parallel lines.
     """
+
     def __init__(self, angle, origin_x, origin_y, delta_x, delta_y, dashes):
-        """
-        Initializes a PatternLineFamily instance.
+        """Initializes a PatternLineFamily instance.
 
         Args:
             angle (float): The angle of the lines in degrees.
@@ -39,16 +38,16 @@ class PatternLineFamily:
         self.delta = (delta_x, delta_y)
         self.dashes = dashes if dashes is not None else []
 
+
 class HatchPattern:
-    """
-    Represents a complete hatch pattern, containing metadata and line families.
-    
+    """Represents a complete hatch pattern, containing metadata and line families.
+
     This class holds the definition for a pattern (e.g., 'ANSI31') and contains
     the core logic to generate the drawing geometry for a given area.
     """
+
     def __init__(self, name, description):
-        """
-        Initializes a HatchPattern instance.
+        """Initializes a HatchPattern instance.
 
         Args:
             name (str): The name of the pattern.
@@ -63,8 +62,7 @@ class HatchPattern:
         self.line_families.append(line_family)
 
     def estimate_scale(self, target_size, repetitions=3.0):
-        """
-        Calculates a reasonable scale to make the pattern visible in a preview.
+        """Calculates a reasonable scale to make the pattern visible in a preview.
 
         The goal is to fit a certain number of pattern repetitions within the
         target preview size.
@@ -80,15 +78,16 @@ class HatchPattern:
         for lf in self.line_families:
             # The perpendicular displacement (delta_x) is the key to pattern size
             max_displacement = max(max_displacement, abs(lf.delta[0]))
-        
+
         if max_displacement == 0 or repetitions == 0:
             return 1.0
-            
+
         return target_size / (repetitions * max_displacement)
 
-    def generate_bitmap(self, width, height, scale=None, background_color=None, line_color=None):
-        """
-        Generates a System.Drawing.Bitmap of the hatch pattern.
+    def generate_bitmap(
+        self, width, height, scale=None, background_color=None, line_color=None
+    ):
+        """Generates a System.Drawing.Bitmap of the hatch pattern.
 
         Args:
             width (int): The desired width of the bitmap.
@@ -120,7 +119,7 @@ class HatchPattern:
         gfx.Clear(background_color)
 
         # Create the pen for drawing lines
-        pen = Pen(line_color, 1) # 1-pixel wide lines
+        pen = Pen(line_color, 1)  # 1-pixel wide lines
 
         # Use the existing logic to get line instructions
         # We use max(width, height) to ensure the generation covers the whole area
@@ -130,9 +129,13 @@ class HatchPattern:
         for line in lines:
             # Draw each line onto the graphics object
             try:
-                gfx.DrawLine(pen, 
-                             int(round(line['x1'])), int(round(line['y1'])), 
-                             int(round(line['x2'])), int(round(line['y2'])))
+                gfx.DrawLine(
+                    pen,
+                    int(round(line["x1"])),
+                    int(round(line["y1"])),
+                    int(round(line["x2"])),
+                    int(round(line["y2"])),
+                )
             except Exception as e:
                 # Catch potential overflow errors if lines are excessively long
                 print("Warning: Error drawing line: {}".format(e))
@@ -144,10 +147,10 @@ class HatchPattern:
         return bmp
 
     def convert_to_wpf_bitmap(self, bitmap):
-        """
-        Converts a System.Drawing.Bitmap to a WPF-compatible BitmapSource.
+        """Converts a System.Drawing.Bitmap to a WPF-compatible BitmapSource.
+
         This is for use in the UI preview.
-        
+
         Args:
             bitmap (System.Drawing.Bitmap): The bitmap to convert.
 
@@ -157,13 +160,13 @@ class HatchPattern:
         stream = MemoryStream()
         bitmap.Save(stream, ImageFormat.Png)
         stream.Seek(0, System.IO.SeekOrigin.Begin)
-        
+
         wpf_bitmap = BitmapImage()
         wpf_bitmap.BeginInit()
         wpf_bitmap.StreamSource = stream
         wpf_bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad
         wpf_bitmap.EndInit()
-        wpf_bitmap.Freeze() # Important for performance and cross-thread access
+        wpf_bitmap.Freeze()  # Important for performance and cross-thread access
 
         # Dispose of the bitmap and stream
         stream.Close()
@@ -173,15 +176,14 @@ class HatchPattern:
         return wpf_bitmap
 
     def generate_drawing_instructions(self, square_size, scale=None):
-        """
-        Generates the line segments required to fill a square with this pattern.
+        """Generates the line segments required to fill a square with this pattern.
 
         This is the core method that performs the geometric calculations, including
         scaling, line generation, clipping, and dashing.
 
         Args:
             square_size (float): The side length of the square area to fill.
-            scale (float, optional): A specific scale to apply to the pattern. 
+            scale (float, optional): A specific scale to apply to the pattern.
                                      If None, an estimated scale will be used.
 
         Returns:
@@ -218,18 +220,29 @@ class HatchPattern:
             # We project the box corners onto the vector perpendicular to the lines
             # to find the min/max distance from the origin line.
             perp_dir_vec = (-sin_a, cos_a)
-            max_proj = -float('inf')
-            min_proj = float('inf')
-            
-            corners = [(0, 0), (square_size, 0), (0, square_size), (square_size, square_size)]
+            max_proj = -float("inf")
+            min_proj = float("inf")
+
+            corners = [
+                (0, 0),
+                (square_size, 0),
+                (0, square_size),
+                (square_size, square_size),
+            ]
             for corner in corners:
                 # Vector from scaled origin to corner
-                vec_to_corner = (corner[0] - scaled_origin_x, corner[1] - scaled_origin_y)
+                vec_to_corner = (
+                    corner[0] - scaled_origin_x,
+                    corner[1] - scaled_origin_y,
+                )
                 # Project this vector onto the perpendicular direction vector
-                proj = vec_to_corner[0] * perp_dir_vec[0] + vec_to_corner[1] * perp_dir_vec[1]
+                proj = (
+                    vec_to_corner[0] * perp_dir_vec[0]
+                    + vec_to_corner[1] * perp_dir_vec[1]
+                )
                 min_proj = min(min_proj, proj)
                 max_proj = max(max_proj, proj)
-            
+
             # scaled_delta_x is the distance between lines
             if scaled_delta_x == 0:
                 # If delta_x is 0, we only have one line to draw
@@ -246,15 +259,18 @@ class HatchPattern:
 
                 # Apply parallel displacement (stagger)
                 stagger_offset = i * scaled_delta_y
-                stagger_vec = (line_dir_vec[0] * stagger_offset, line_dir_vec[1] * stagger_offset)
+                stagger_vec = (
+                    line_dir_vec[0] * stagger_offset,
+                    line_dir_vec[1] * stagger_offset,
+                )
                 start_point_x += stagger_vec[0]
                 start_point_y += stagger_vec[1]
-                
+
                 # We have an infinite line defined by a point and a direction.
                 # Now, we clip it to the bounding box.
                 # A simple way is to find intersection points with the box edges.
                 # The line equation is P = start_point + t * line_dir_vec
-                
+
                 # Define a very long line segment that is guaranteed to cross the box
                 p1_x = start_point_x - line_dir_vec[0] * square_size * 2
                 p1_y = start_point_y - line_dir_vec[1] * square_size * 2
@@ -269,9 +285,11 @@ class HatchPattern:
                     cx1, cy1, cx2, cy2 = clipped_line
                     # Apply dash pattern to the clipped line
                     if not scaled_dashes:
-                        all_lines.append({'x1': cx1, 'y1': cy1, 'x2': cx2, 'y2': cy2})
+                        all_lines.append({"x1": cx1, "y1": cy1, "x2": cx2, "y2": cy2})
                     else:
-                        all_lines.extend(self._apply_dashes(cx1, cy1, cx2, cy2, scaled_dashes))
+                        all_lines.extend(
+                            self._apply_dashes(cx1, cy1, cx2, cy2, scaled_dashes)
+                        )
 
         return all_lines
 
@@ -294,7 +312,7 @@ class HatchPattern:
                     t0 = max(t0, t)
                 else:
                     t1 = min(t1, t)
-        
+
         if t0 > t1:
             return None
 
@@ -311,13 +329,13 @@ class HatchPattern:
         line_length = math.sqrt(dx**2 + dy**2)
         if line_length == 0:
             return []
-        
+
         # Normalize direction vector
         ux, uy = dx / line_length, dy / line_length
 
-        total_dash_pattern_length = sum(abs(d) for d in dashes)
+        sum(abs(d) for d in dashes)
         current_pos = 0.0
-        
+
         while current_pos < line_length:
             for dash in dashes:
                 is_pen_down = dash >= 0
@@ -325,7 +343,7 @@ class HatchPattern:
 
                 if current_pos >= line_length:
                     break
-                
+
                 start_d = current_pos
                 end_d = min(current_pos + dash_len, line_length)
 
@@ -336,23 +354,24 @@ class HatchPattern:
                         dash_y1 = y1 + start_d * uy
                         dash_x2 = x1 + end_d * ux
                         dash_y2 = y1 + end_d * uy
-                        dashed_lines.append({'x1': dash_x1, 'y1': dash_y1, 'x2': dash_x2, 'y2': dash_y2})
-                
+                        dashed_lines.append(
+                            {"x1": dash_x1, "y1": dash_y1, "x2": dash_x2, "y2": dash_y2}
+                        )
+
                 current_pos += dash_len
 
         return dashed_lines
 
+
 class PatParse:
-    """
-    Parses Autodesk .pat files into a collection of HatchPattern objects.
-    """
+    """Parses Autodesk .pat files into a collection of HatchPattern objects."""
+
     def __init__(self):
         """Initializes the parser with an empty pattern dictionary."""
         self.patterns = {}
 
     def parse_file(self, file_path):
-        """
-        Parses a .pat file from a given file path.
+        """Parses a .pat file from a given file path.
 
         Args:
             file_path (str): The path to the .pat file.
@@ -360,13 +379,12 @@ class PatParse:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             content = f.read()
         self.parse_string(content)
 
     def parse_string(self, pat_content):
-        """
-        Parses the content of a .pat file from a string.
+        """Parses the content of a .pat file from a string.
 
         Args:
             pat_content (str): A string containing the .pat file data.
@@ -376,12 +394,12 @@ class PatParse:
 
         for line in lines:
             line = line.strip()
-            if not line or line.startswith(';'):
+            if not line or line.startswith(";"):
                 continue
-            
-            if line.startswith('*'):
+
+            if line.startswith("*"):
                 # This is a header line, start of a new pattern
-                parts = line[1:].split(',', 1)
+                parts = line[1:].split(",", 1)
                 name = parts[0].strip()
                 description = parts[1].strip() if len(parts) > 1 else ""
                 current_pattern = HatchPattern(name, description)
@@ -389,17 +407,18 @@ class PatParse:
             elif current_pattern:
                 # This is a data line for the current pattern
                 try:
-                    parts = [float(p) for p in line.split(',')]
+                    parts = [float(p) for p in line.split(",")]
                     angle, ox, oy, dx, dy = parts[0:5]
                     dashes = parts[5:]
                     line_family = PatternLineFamily(angle, ox, oy, dx, dy, dashes)
                     current_pattern.add_line_family(line_family)
                 except (ValueError, IndexError):
-                    print(f"Warning: Could not parse line for pattern '{current_pattern.name}': {line}")
+                    print(
+                        f"Warning: Could not parse line for pattern '{current_pattern.name}': {line}"
+                    )
 
     def get_pattern(self, name):
-        """
-        Retrieves a parsed pattern by its name.
+        """Retrieves a parsed pattern by its name.
 
         Args:
             name (str): The name of the pattern to retrieve.
@@ -413,9 +432,10 @@ class PatParse:
         """Returns a list of all parsed pattern names."""
         return list(self.patterns.keys())
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # --- Example Usage ---
-    
+
     # 1. Define a sample .pat file content as a string
     sample_pat_data = """
     ; This is a comment
@@ -436,12 +456,12 @@ if __name__ == '__main__':
 
     # 3. Get a specific pattern
     brick_pattern = parser.get_pattern("BRICK")
-    
+
     if brick_pattern:
         print(f"\n--- Generating instructions for '{brick_pattern.name}' ---")
-        
+
         # 4. Generate drawing instructions for a 200x200 square
-        
+
         # Option A: Let the library estimate a good scale
         print("\nUsing estimated scale:")
         auto_scaled_lines = brick_pattern.generate_drawing_instructions(square_size=200)
@@ -451,7 +471,9 @@ if __name__ == '__main__':
 
         # Option B: Provide a specific scale
         print("\nUsing a custom scale of 4.0:")
-        custom_scaled_lines = brick_pattern.generate_drawing_instructions(square_size=200, scale=4.0)
+        custom_scaled_lines = brick_pattern.generate_drawing_instructions(
+            square_size=200, scale=4.0
+        )
         print(f"Generated {len(custom_scaled_lines)} line segments.")
         # for line in custom_scaled_lines:
         #     print(line)
@@ -461,15 +483,15 @@ if __name__ == '__main__':
         try:
             # Generate a bitmap using the custom scale
             bmp = brick_pattern.generate_bitmap(200, 200, scale=4.0)
-            
+
             # Save it to a file
             save_path = "test_pattern_preview.png"
             bmp.Save(save_path, ImageFormat.Png)
             bmp.Dispose()
             print(f"Successfully saved test bitmap to: {save_path}")
-            
+
             # Note: To test the WPF converter, you would need a WPF application context,
             # which is not available in this simple console test.
-            
+
         except Exception as e:
             print(f"Error during bitmap generation: {e}")

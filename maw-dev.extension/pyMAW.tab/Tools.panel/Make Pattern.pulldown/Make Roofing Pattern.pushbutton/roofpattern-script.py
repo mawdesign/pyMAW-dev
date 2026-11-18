@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Normal and Bump Map Generator for Corrugated, Trapezoidal, and Ribbed Profiles (IronPython).
+"""Normal and Bump Map Generator for Corrugated, Trapezoidal, and Ribbed Profiles (IronPython).
 
 This script uses a WPF/XAML interface.
 It uses the .NET System.Drawing library for image generation.
@@ -14,7 +13,6 @@ from pyrevit.revit.db.transaction import Transaction
 
 # Required Imports
 import wpf
-import sys
 import os
 from math import pi, cos, sin, ceil, sqrt
 
@@ -55,9 +53,7 @@ def db_color_to_wpf_brush(db_color):
 
 
 def db_color_from_hex(hex_color_string):
-    """
-    Converts a hex color string (e.g., '#FF0000' or 'FF0000') to a DB.Color object.
-    """
+    """Converts a hex color string (e.g., '#FF0000' or 'FF0000') to a DB.Color object."""
     # Remove the '#' if it exists
     if hex_color_string.startswith("#"):
         hex_color_string = hex_color_string[1:]
@@ -90,9 +86,8 @@ def hex_from_db_color(db_color):
 
 
 def dim_from_string(dim_as_string):
-    """
-    Parses a string (e.g., "100", "1' 6\"", "7.5cm") into Revit's
-    internal units (decimal feet) and the current display units (mm or in).
+    r"""Parses a string (e.g., "100", "1' 6\"", "7.5cm") into Revit's internal units (decimal feet) and the current display units (mm or in).
+
     Uses the user's current IS_METRIC setting to assume default units.
 
     Returns:
@@ -187,8 +182,8 @@ def validate_ribbed(spacing, thickness):
 
 
 def calculate_dimensions(rib_spacing_int):
-    """
-    Calculates the real-world size and number of repeats for the texture.
+    """Calculates the real-world size and number of repeats for the texture.
+
     Ensures the texture is at least 1' or 300mm wide and has at least 3 repeats.
     """
     width_for_3_repeats = rib_spacing_int * 3.0
@@ -201,10 +196,7 @@ def calculate_dimensions(rib_spacing_int):
 
 
 def generate_color_row(pixel_count, generation_func):
-    """
-    Generates a single row of pixel colors by calling a generation function
-    for each pixel.
-    """
+    """Generates a single row of pixel colors by calling a generation function for each pixel."""
     color_row = []
     for i in range(pixel_count):
         color_components = generation_func(i, pixel_count)
@@ -225,12 +217,12 @@ def create_bitmap_from_row(image_size, color_row):
 
 
 def create_revit_fill_pattern(doc, pattern_name, profile_type, p_values):
-    """
-    Creates or retrieves a Revit model fill pattern with parallel lines.
+    """Creates or retrieves a Revit model fill pattern with parallel lines.
+
     For Corrugated: Creates one line per repeat.
     For Trapezoidal: Creates two lines per repeat (at base of rib).
     For Ribbed: Creates one line per repeat.
-    Returns (FillPatternElement, status_message)
+    Returns (FillPatternElement, status_message).
     """
     # Check if a model pattern with this name already exists
     existing = DB.FillPatternElement.GetFillPatternElementByName(
@@ -295,7 +287,7 @@ def create_revit_fill_pattern(doc, pattern_name, profile_type, p_values):
         fill_pattern.SetFillGrids(grids)
 
         # Create the fill pattern element inside a transaction
-        with Transaction("Create Fill Pattern: " + pattern_name) as rvt_transaction:
+        with Transaction("Create Fill Pattern: " + pattern_name):
             fill_pattern_element = DB.FillPatternElement.Create(doc, fill_pattern)
 
         return fill_pattern_element, "created successfully"
@@ -304,9 +296,9 @@ def create_revit_fill_pattern(doc, pattern_name, profile_type, p_values):
 
 
 def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
-    """
-    Creates a new FilledRegionType that uses the given fill pattern.
-    Returns (True/False, status_message)
+    """Creates a new FilledRegionType that uses the given fill pattern.
+
+    Returns (True/False, status_message).
     """
     # Check if a FilledRegionType with this name already exists
     # - Create Filter:
@@ -331,19 +323,30 @@ def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
         return False, "already exists"
 
     try:
-        with Transaction("Create Filled Region Type: " + filled_region_name) as t:
+        with Transaction("Create Filled Region Type: " + filled_region_name):
             # Get a default type to duplicate
             default_type_id = doc.GetDefaultElementTypeId(
                 DB.ElementTypeGroup.FilledRegionType
             )
             default_type = doc.GetElement(default_type_id)
 
-            if not default_type:
-                # Fallback to finding any solid fill
-                solid_fill_id = DB.FilledRegionType.GetBuiltInFilledRegionTypeId(
-                    DB.BuiltInFilledRegionType.SolidBlack
+            if not default_type or not default_type.IsValidForegroundPatternId(
+                fill_pattern_element.Id
+            ):
+                # Fallback to finding any acceptable filled region
+                collector = DB.FilteredElementCollector(doc).OfClass(
+                    DB.FilledRegionType
                 )
-                default_type = doc.GetElement(solid_fill_id)
+                default_type = next(
+                    (
+                        fr_type
+                        for fr_type in collector
+                        if fr_type.IsValidForegroundPatternId(fill_pattern_element.Id)
+                    ),
+                    None,
+                )
+                if not default_type:
+                    return False, "No existing pattern to duplicate found"
 
             new_type = default_type.Duplicate(filled_region_name)
 
@@ -352,7 +355,7 @@ def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
             new_type.ForegroundPatternColor = DB.Color(0, 0, 0)  # Black lines
 
             # Ensure background is transparent
-            new_type.BackgroundPatternId = DB.ElementId(-1)  # None
+            new_type.BackgroundPatternId = DB.ElementId.InvalidElementId  # None
             new_type.BackgroundPatternColor = DB.Color(0, 0, 0)  # Black
             new_type.IsMasking = False
 
@@ -418,10 +421,7 @@ def get_trapezoidal_vector_func(rib_width, top_width, spacing, height, num_repea
 
 
 def get_ribbed_vector_func(spacing, thickness, height, num_repeats):
-    """
-    Returns a function that calculates the normal vector for a rounded
-    (semi-elliptical) ribbed profile.
-    """
+    """Returns a function that calculates the normal vector for a rounded (semi-elliptical) ribbed profile."""
     a = thickness / 2.0  # semi-minor axis
     h = height  # semi-major axis
     p1 = (spacing - thickness) / 2.0
@@ -498,9 +498,9 @@ def get_trapezoidal_height_func(rib_width, top_width, spacing, height, num_repea
 
 
 def get_ribbed_height_func(spacing, thickness, height, num_repeats):
-    """
-    Returns a function that calculates the height for a flat
-    (rectangular) ribbed profile. (Black and White)
+    """Returns a function that calculates the height for a flat (rectangular) ribbed profile.
+
+    (Black and White).
     """
     p1 = (spacing - thickness) / 2.0
     p2 = p1 + thickness
@@ -570,7 +570,7 @@ class RoofingForm(Window):
             # Set initial diagram
             self.DiagramImage.Source = self.corrugated_diagram
 
-        except Exception as e:
+        except Exception:
             forms.alert(
                 "Could not load UI images. "
                 "Make sure icon_*.png and diagram_*.png files are in the script bundle.",
@@ -619,7 +619,6 @@ class RoofingForm(Window):
 
     def RoofType_Changed(self, sender, e):
         """Hides and shows input fields based on roof type selection."""
-
         # Determine which radio button is checked
         profile_type = "Corrugated"  # Default
         if self.RadioTrapezoidal.IsChecked:
@@ -662,7 +661,11 @@ class RoofingForm(Window):
 
         # Get unit selection from UI and save if it changed
         is_metric_ui = self.MetricRadioButton.IsChecked
-        if is_metric_ui != IS_METRIC or CONFIG.get_option("metric", None) != IS_METRIC:
+        try:
+            metric_config = CONFIG.get_option("metric", None)
+        except:
+            metric_config = None
+        if is_metric_ui != IS_METRIC or metric_config is None:
             CONFIG.set_option("Metric", is_metric_ui)
             script.save_config()
             IS_METRIC = is_metric_ui  # Update global for this session
@@ -676,8 +679,12 @@ class RoofingForm(Window):
 
         # Save material color to config
         if self.material_color and self.material_color.IsValid:
-            if hex_from_db_color(self.material_color) != CONFIG.get_option("MaterialColor", "not set"):
-                CONFIG.set_option("MaterialColor", hex_from_db_color(self.material_color))
+            if hex_from_db_color(self.material_color) != CONFIG.get_option(
+                "MaterialColor", "not set"
+            ):
+                CONFIG.set_option(
+                    "MaterialColor", hex_from_db_color(self.material_color)
+                )
                 script.save_config()
 
         if (
@@ -701,7 +708,7 @@ class RoofingForm(Window):
 
         # Load naming config
         config = pattern_config.load_config(PATH_SCRIPT)
-        CONFIG_SECTION = "Roofing Patterns"
+        config_section = "Roofing Patterns"
 
         # --- 2. Initialize and Parse All Dimensions ---
         image_size = 1024
@@ -811,19 +818,19 @@ class RoofingForm(Window):
             # --- Get Naming Templates ---
             key_suffix = profile_type.lower()
             pattern_name_template = pattern_config.get_template(
-                config, CONFIG_SECTION, key_suffix + "_pattern_name"
+                config, config_section, key_suffix + "_pattern_name"
             )
             region_name_template = pattern_config.get_template(
-                config, CONFIG_SECTION, key_suffix + "_region_name"
+                config, config_section, key_suffix + "_region_name"
             )
             material_name_template = pattern_config.get_template(
-                config, CONFIG_SECTION, key_suffix + "_material_name"
+                config, config_section, key_suffix + "_material_name"
             )
             normal_map_template = pattern_config.get_template(
-                config, CONFIG_SECTION, key_suffix + "_normal_map"
+                config, config_section, key_suffix + "_normal_map"
             )
             bump_map_template = pattern_config.get_template(
-                config, CONFIG_SECTION, key_suffix + "_bump_map"
+                config, config_section, key_suffix + "_bump_map"
             )
 
             # --- Format Names ---

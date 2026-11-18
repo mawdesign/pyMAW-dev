@@ -1,0 +1,165 @@
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Repath Material Assets"
+    Height="700"
+    Width="1200">
+
+    <Grid Margin="10">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel
+            Orientation="Horizontal"
+            Grid.Row="0">
+
+            <Button Name="btnAll"
+                    Content="Select All"
+                    Width="100"
+                    Margin="0,0,0,5"/>
+
+            <Button Name="btnNone"
+                    Content="Select None"
+                    Width="100"
+                    Margin="5,0,0,5"/>
+
+            <Button Name="btnAmber"
+                    Content="Select Amber"
+                    Width="100"
+                    Margin="5,0,0,5"/>
+
+            <Button Name="btnRed"
+                    Content="Select Red"
+                    Width="100"
+                    Margin="5,0,0,5"/>
+
+            <Button Name="btnHideUnselected"
+                    Content="Hide Unselected"
+                    Width="100"
+                    Margin="5,0,0,5"/>
+        </StackPanel>
+
+        <DataGrid
+            Name="dgItems"
+            Grid.Row="1"
+            AutoGenerateColumns="False"
+            CanUserAddRows="False">
+
+            <DataGrid.Columns>
+
+                <DataGridTemplateColumn
+                    Header=""
+                    Width="40">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox
+                                IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn
+                    Header=""
+                    Width="40"
+                    SortMemberPath="Severity">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border
+                                Background="{Binding StatusColour}"
+                                Margin="-1"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Stretch">
+                                <TextBlock
+                                    Text="{Binding StatusIcon}"
+                                    ToolTip="{Binding Method}"
+                                    FontFamily="Segoe UI Symbol"
+                                    FontSize="16"
+                                    HorizontalAlignment="Center"/>
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTextColumn
+                    Header="Material"
+                    Binding="{Binding MaterialName}"
+                    Width="200"/>
+
+                <DataGridTextColumn
+                    Header="Usage"
+                    Binding="{Binding Usage}"
+                    Width="120"/>
+
+                <DataGridTextColumn
+                    Header="Current Path"
+                    Binding="{Binding CurrentPath}"
+                    Width="*"/>
+
+                <DataGridTextColumn
+                    Header="New Path"
+                    x:Name="colFullPath"
+                    Binding="{Binding ResolvedPath}"
+                    Visibility="Collapsed"
+                    Width="*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground"
+                                    Value="{Binding ResolvedPathColour}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTextColumn
+                    Header="New Path"
+                    x:Name="colRelativePath"
+                    Binding="{Binding RelativePath}"
+                    Width="*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground"
+                                    Value="{Binding RelativePathColour}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+            </DataGrid.Columns>
+
+        </DataGrid>
+
+        <StackPanel
+            Orientation="Horizontal"
+            Grid.Row="2"
+            HorizontalAlignment="Right">
+
+            <RadioButton
+                Name="rbRelative"
+                Content="Relative Path"
+                IsChecked="True"
+                Margin="0,5,15,0"/>
+
+            <RadioButton
+                Name="rbFull"
+                Content="Full Path"
+                Margin="0,5,25,0"/>
+
+            <Button Name="btnOK"
+                    Content="OK"
+                    Width="100"
+                    Margin="5,5,0,0"/>
+
+            <Button Name="btnCancel"
+                    Content="Cancel"
+                    Width="100"
+                    Margin="5,5,0,0"/>
+
+        </StackPanel>
+
+    </Grid>
+
+</Window>

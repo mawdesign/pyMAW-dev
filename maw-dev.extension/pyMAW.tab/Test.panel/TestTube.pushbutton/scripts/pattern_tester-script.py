@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-Pattern Tester
-"""
+"""Pattern Tester."""
+
 """
 Test script for the 'pat_lib' library.
 
@@ -18,36 +17,42 @@ import traceback
 
 # .NET Imports (for the ImageFormat, just in case)
 import clr
+
 try:
-    clr.AddReference('System.Drawing')
+    clr.AddReference("System.Drawing")
     from System.Drawing.Imaging import ImageFormat
 except Exception as e:
-    forms.alert("Failed to import System.Drawing.Imaging:\n{}".format(e),
-                title="Test Failed: .NET Import Error")
+    forms.alert(
+        "Failed to import System.Drawing.Imaging:\n{}".format(e),
+        title="Test Failed: .NET Import Error",
+    )
     raise
 
 # --- Import the Library to be Tested ---
 try:
-    import pat_lib as Hatch
+    import pat_lib as Hatch  # noqa: N812
 except ImportError as e:
-    forms.alert("Failed to import 'pat_lib.py'.\n"
-                "Ensure 'pat_lib.py' is in your extension's 'lib' folder.\n\n"
-                "Error: {}".format(e),
-                title="Test Failed: Import Error")
+    forms.alert(
+        "Failed to import 'pat_lib.py'.\n"
+        "Ensure 'pat_lib.py' is in your extension's 'lib' folder.\n\n"
+        "Error: {}".format(e),
+        title="Test Failed: Import Error",
+    )
     raise
-except Exception as e:
-    forms.alert("An unknown error occurred importing 'pat_lib.py':\n{}"
-                .format(traceback.format_exc()),
-                title="Test Failed: Unknown Import Error")
+except Exception:
+    forms.alert(
+        "An unknown error occurred importing 'pat_lib.py':\n{}".format(
+            traceback.format_exc()
+        ),
+        title="Test Failed: Unknown Import Error",
+    )
     raise
 
 
 def run_pat_lib_test():
-    """
-    Runs the test for parsing a PAT string and saving a bitmap.
-    """
+    """Runs the test for parsing a PAT string and saving a bitmap."""
     print("--- Starting pat_lib Test ---")
-    
+
     # 1. Define a sample .pat file content as a string
     sample_pat_data = """;%UNITS=MM
 ;%VERSION=3.0
@@ -145,52 +150,60 @@ def run_pat_lib_test():
         # 3. Get a the patterns
         for brick_pattern in patterns:
             print("Getting '{}' pattern...".format(brick_pattern.name))
-        
+
             if not brick_pattern:
-                forms.alert("Test failed: Could not find this pattern after parsing.",
-                            title="Test Failed: Parsing Error")
+                forms.alert(
+                    "Test failed: Could not find this pattern after parsing.",
+                    title="Test Failed: Parsing Error",
+                )
                 return
 
             # 4. Generate a bitmap
             print("Generating 200x200 bitmap with scale 0.5...")
-            pen_width = 1 if '_SL' in brick_pattern.name else 1
-            bmp = brick_pattern.get_bitmap(594, 511, 1.188372, pen_width = pen_width, border_width=2)
-            
+            pen_width = 1 if "_SL" in brick_pattern.name else 1
+            bmp = brick_pattern.get_bitmap(
+                594, 511, 1.188372, pen_width=pen_width, border_width=2
+            )
+
             # 5. Define a save path (e.g., user's Downloads folder)
             try:
                 # os.path.expanduser('~/Downloads') is the most reliable way
-                downloads_path = os.path.join(os.path.expanduser('~'), r'Downloads\patterns')
+                downloads_path = os.path.join(
+                    os.path.expanduser("~"), r"Downloads\patterns"
+                )
                 if not os.path.exists(downloads_path):
-                     # Fallback to user's home directory if Downloads doesn't exist
-                     downloads_path = os.path.expanduser('~')
-                
-                save_path = os.path.join(downloads_path, "{}_play.png".format(brick_pattern.name))
+                    # Fallback to user's home directory if Downloads doesn't exist
+                    downloads_path = os.path.expanduser("~")
+
+                save_path = os.path.join(
+                    downloads_path, "{}_play.png".format(brick_pattern.name)
+                )
             except Exception as e:
                 print("Error getting save path: {}".format(e))
                 # Fallback to a relative path
                 save_path = "pyrevit_pat_lib_test.png"
-            
+
             # 6. Save the bitmap to a file
             print("Saving bitmap to: {}".format(save_path))
             bmp.Save(save_path, ImageFormat.Png)
             bmp.Dispose()
-        
+
         # 7. Report Success
         print("Test successful!")
         # forms.alert("Test Successful!\n\nBitmap saved to:\n{}".format(save_path),
-                    # title="pat_lib Test Complete")
+        # title="pat_lib Test Complete")
 
     except Exception as e:
         # 8. Report Failure
         print("--- TEST FAILED ---")
         print(traceback.format_exc())
         print("-------------------")
-        forms.alert("The pat_lib test failed. See console for details.\n\n"
-                    "Error: {}".format(e),
-                    title="Test Failed: Runtime Error")
+        forms.alert(
+            "The pat_lib test failed. See console for details.\n\nError: {}".format(e),
+            title="Test Failed: Runtime Error",
+        )
 
 
 # --- Main execution point ---
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_pat_lib_test()
-

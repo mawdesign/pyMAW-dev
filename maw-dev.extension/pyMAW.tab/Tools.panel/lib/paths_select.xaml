@@ -1,0 +1,122 @@
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Material Search Paths"
+    Height="500"
+    Width="900">
+
+    <Grid Margin="10">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel
+            Grid.Row="0"
+            Orientation="Horizontal">
+
+            <TextBlock
+				Text="Reload path list from: " />
+
+			<Button
+                Name="btnUserIni"
+                Width="120"
+                Margin="5,0,0,5"
+                Content="User revit.ini"/>
+
+            <Button
+                Name="btnDefaultIni"
+                Width="120"
+                Margin="5,0,0,5"
+                Content="Default revit.ini"/>
+
+        </StackPanel>
+
+        <DataGrid
+            Name="dgPaths"
+            Grid.Row="1"
+            AutoGenerateColumns="False"
+            CanUserAddRows="False">
+
+            <DataGrid.Columns>
+
+                <DataGridTextColumn
+                    Header="Search Path"
+                    Width="*"
+                    Binding="{Binding Path,
+                                      Mode=TwoWay,
+                                      UpdateSourceTrigger=PropertyChanged}">
+					<DataGridTextColumn.ElementStyle>
+						<Style TargetType="TextBlock">
+							<Setter Property="VerticalAlignment" Value="Center"/>
+						</Style>
+					</DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTemplateColumn
+                    Width="30"
+                    CanUserSort="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button 
+                            Height = "30" Width = "30"
+                                Tag="{Binding}"
+                                Click="BrowseRow_Click"
+                                ToolTip="Browse for path" >
+                                <TextBlock FontFamily="Segoe Fluent Icons" 
+                                    Text="&#xEE1A;" 
+                                   FontSize="14" 
+                                   VerticalAlignment="Center" 
+                                   HorizontalAlignment="Center"/>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn
+                    Width="30"
+                    CanUserSort="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button
+                                Tag="{Binding}"
+                                Click="DeleteRow_Click"
+                                ToolTip="Remove Path" >
+                                <TextBlock FontFamily="Segoe Fluent Icons" 
+                                    Text="&#xE74D;" 
+                                   FontSize="14" 
+                                   VerticalAlignment="Center" 
+                                   HorizontalAlignment="Center"/>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+            </DataGrid.Columns>
+
+        </DataGrid>
+
+        <StackPanel
+            Grid.Row="2"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right">
+
+            <Button
+                Name="btnOK"
+                Width="100"
+                Margin="0,5,5,0"
+                Content="OK"/>
+
+            <Button
+                Name="btnCancel"
+                Width="100"
+                Margin="0,5,0,0"
+                Content="Cancel"/>
+
+        </StackPanel>
+
+    </Grid>
+
+</Window>

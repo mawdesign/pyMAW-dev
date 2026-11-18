@@ -1,0 +1,11 @@
+title: "Manage\nMaterials"
+tooltip: Tools for managing Revit materials
+author: "Michael Warwick\nMAW Design"
+layout:
+  - Export
+  - Import
+  - Repath
+  - Rename Assets
+  - Material Colours
+  - Layout
+  - Add Library

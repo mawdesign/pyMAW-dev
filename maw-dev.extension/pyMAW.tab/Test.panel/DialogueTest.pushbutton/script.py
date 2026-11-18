@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-__context__ = 'zerodoc'
-__doc__ = 'This test script is currently trialling options for removing or preventing duplicates of families when inserting views'
+__context__ = "zerodoc"
+__doc__ = "This test script is currently trialling options for removing or preventing duplicates of families when inserting views"
 
 # import os.path as op
-from pyrevit import revit, DB
-from pyrevit import forms
 from pyrevit import script
 
 dump = ""
@@ -20,9 +18,7 @@ pyrevit.forms.select_dest_docs()
 # by opening families and then load into project and close
 
 
-
 output = script.get_output()
 
 output.set_height(600)
-output.set_title('Current script dump:')
-
+output.set_title("Current script dump:")

@@ -1,11 +1,12 @@
 # -*- coding: UTF-8 -*-
 from pyrevit import revit
-from pyrevit import DB, UI
+from pyrevit import DB
 from pyrevit import forms
 from pyrevit.revit import Transaction
 from pyrevit import script
 from pyrevit import EXEC_PARAMS
-import os, sys
+import os
+import sys
 import xlrd
 import re
 
@@ -42,7 +43,7 @@ def setParam(param, value, f=revit.doc.FamilyManager):
                 value = int(value)
             elif param.StorageType == "ElementID":
                 value = None
-            if not value is None:
+            if value is not None:
                 f.Set(param, value)
         except:
             forms.alert(
@@ -52,8 +53,9 @@ def setParam(param, value, f=revit.doc.FamilyManager):
                 "Error setting " + param.Definition.Name,
             )
 
+
 def replaceParam(oldName, newName, param, sharedParams, paraGroup, isInstance, fam):
-    errorState = False
+    error_state = False
     if param.IsShared and newName in sharedParams:
         # Cannot direct replace shared with shared so have to first replace with a family parameter
         #
@@ -64,9 +66,11 @@ def replaceParam(oldName, newName, param, sharedParams, paraGroup, isInstance, f
         # 	BuiltInParameterGroup parameterGroup,
         # 	bool isInstance
         # )
-        familyParameter = fam.ReplaceParameter(param, "x"+oldName, paraGroup, isInstance)
+        family_parameter = fam.ReplaceParameter(
+            param, "x" + oldName, paraGroup, isInstance
+        )
     else:
-        familyParameter = param
+        family_parameter = param
     # Replace a family parameter with a shared parameter.
     # public FamilyParameter ReplaceParameter(
     #   FamilyParameter currentParameter,
@@ -75,11 +79,14 @@ def replaceParam(oldName, newName, param, sharedParams, paraGroup, isInstance, f
     #   bool isInstance
     # )
     try:
-        param = fam.ReplaceParameter(familyParameter, sharedParams[newName], paraGroup, isInstance)
+        param = fam.ReplaceParameter(
+            family_parameter, sharedParams[newName], paraGroup, isInstance
+        )
     except:
-        errorState = True
+        error_state = True
         param = False
-    return param, errorState
+    return param, error_state
+
 
 def pathShortener(path, length=40):
     pattern = r"^(\w+:\\)?([^\\]*\\).*(\\[^\\]*\\[^.]*[.].*)$"
@@ -91,7 +98,7 @@ def pathShortener(path, length=40):
 
 
 def xlFixUnicode(value, ctype):
-    return value #.decode("utf-8") if ctype == 1 else value
+    return value  # .decode("utf-8") if ctype == 1 else value
 
 
 def main():
@@ -101,7 +108,7 @@ def main():
 
     # pick excel file and read new parameters
     # https://github.com/pyrevitlabs/pyRevit/tree/master/site-packages/xlrd
-    inParams = []
+    in_params = []
     cfg = script.get_config("MAWdev")
     path = cfg.get_option("famparamxl", "not set")
     sheet_name = cfg.get_option("famparamxlsheet", "")
@@ -124,109 +131,123 @@ def main():
 
         # create ordered list to preserve order
         for r in worksheet.get_rows():
-            inParams.append([xlFixUnicode(c.value, c.ctype) for c in r])
+            in_params.append([xlFixUnicode(c.value, c.ctype) for c in r])
 
-    if not len(inParams):
+    if not len(in_params):
         forms.alert("Error opening {}".format(pathShortener(path)), "Error")
         sys.exit()
 
     # get family parameters
-    currentParams = fam.GetParameters()
-    currentParamNames = [x.Definition.Name for x in currentParams]
-    categoryName = doc.OwnerFamily.FamilyCategory.Name
-    if categoryName == "Doors":
+    current_params = fam.GetParameters()
+    current_param_names = [x.Definition.Name for x in current_params]
+    category_name = doc.OwnerFamily.FamilyCategory.Name
+    if category_name == "Doors":
         for p in doc.OwnerFamily.Parameters:
             if p.Definition.Name == "Host":
-                isCurtain = False if p.AsValueString() == "Wall" else True
+                is_curtain = False if p.AsValueString() == "Wall" else True
                 break
 
-    headers = inParams.pop(0)  # get headers from first row
-    newParams = []
-    formulaParams = []
-    valueParams = []
-    errorItems = []
+    headers = in_params.pop(0)  # get headers from first row
+    new_params = []
+    formula_params = []
+    value_params = []
+    error_items = []
 
     # get shared parameters
-    sharedParams = {}
-    sharedParamFile = app.OpenSharedParameterFile()
-    for sg in sharedParamFile.Groups:
-        sgName = sg.Name
+    shared_params = {}
+    shared_param_file = app.OpenSharedParameterFile()
+    for sg in shared_param_file.Groups:
         for sp in sg.Definitions:
-            sharedParams[sp.Name] = sp
+            shared_params[sp.Name] = sp
 
     # wrap in a Transaction
-    with Transaction("Update {} parameters".format(categoryName)) as rvtxn:
-
-        for p in inParams:
+    with Transaction("Update {} parameters".format(category_name)):
+        for p in in_params:
             if not p[headers.index("Parameter")]:
                 continue
-            if categoryName == "Doors" and "CurtainWallDoors" in headers:
-                if isCurtain and not p[headers.index("CurtainWallDoors")]:
+            if category_name == "Doors" and "CurtainWallDoors" in headers:
+                if is_curtain and not p[headers.index("CurtainWallDoors")]:
                     continue
-            parameterName = p[headers.index("Parameter")]
-            paraType = (
+            parameter_name = p[headers.index("Parameter")]
+            para_type = (
                 p[headers.index("Type")]
                 if p[headers.index("Type")] in ["SHARED", "SORT", "RENAME", "REPLACE"]
                 else DB.ParameterType.Parse(DB.ParameterType, p[headers.index("Type")])
             )
-            paraGroup = DB.BuiltInParameterGroup.Parse(
+            para_group = DB.BuiltInParameterGroup.Parse(
                 DB.BuiltInParameterGroup, p[headers.index("Group")]
             )
-            isInstance = p[headers.index("Instance")]
+            is_instance = p[headers.index("Instance")]
             formula = p[headers.index("Formula")] or ""
             depends = p[headers.index("Dependents")] or ""
             depends = [x.strip() for x in depends.split(",")]
             depends = [] if depends == [""] else depends
-            formulaOverride = p[headers.index("FormulaOverride")]
-            newValue = p[headers.index("Value")]
-            valueOverride = p[headers.index("ValueOverride")]
-            oldName = p[headers.index("OldName")]
+            formula_override = p[headers.index("FormulaOverride")]
+            new_value = p[headers.index("Value")]
+            value_override = p[headers.index("ValueOverride")]
+            old_name = p[headers.index("OldName")]
 
-            isNew = False
             param = False
-            if parameterName in currentParamNames:
-                param = familyHasParameter(currentParams, parameterName)
-            elif oldName and oldName in currentParamNames:
-                param = familyHasParameter(currentParams, oldName)
-                if param and paraType == "REPLACE":
-                    param, errorState = replaceParam(oldName, parameterName, param, sharedParams, paraGroup, isInstance, fam)
-                    if param.Definition.Name == oldName or errorState:
-                        errorItems.append("ERROR: couldn't replace '{}' with '{}'".format(oldName, parameterName))
-                        errorItems.append("Parameter is instance: " + str(param.IsInstance))
-                        errorItems.append("Excel is instance: " + str(isInstance))
+            if parameter_name in current_param_names:
+                param = familyHasParameter(current_params, parameter_name)
+            elif old_name and old_name in current_param_names:
+                param = familyHasParameter(current_params, old_name)
+                if param and para_type == "REPLACE":
+                    param, error_state = replaceParam(
+                        old_name,
+                        parameter_name,
+                        param,
+                        shared_params,
+                        para_group,
+                        is_instance,
+                        fam,
+                    )
+                    if param.Definition.Name == old_name or error_state:
+                        error_items.append(
+                            "ERROR: couldn't replace '{}' with '{}'".format(
+                                old_name, parameter_name
+                            )
+                        )
+                        error_items.append(
+                            "Parameter is instance: " + str(param.IsInstance)
+                        )
+                        error_items.append("Excel is instance: " + str(is_instance))
                         param = False
-                elif param and paraType == "RENAME":
+                elif param and para_type == "RENAME":
                     # Rename a family parameter.
                     # public void RenameParameter(
                     # 	FamilyParameter familyParameter,
                     # 	string name
                     # )
-                    fam.RenameParameter(param, parameterName)
-                    if param.Definition.Name == oldName:
-                        errorItems.append("ERROR: couldn't rename '{}' to '{}'".format(oldName, parameterName))
+                    fam.RenameParameter(param, parameter_name)
+                    if param.Definition.Name == old_name:
+                        error_items.append(
+                            "ERROR: couldn't rename '{}' to '{}'".format(
+                                old_name, parameter_name
+                            )
+                        )
                         param = False
             if not param:
-                isNew = True
-                formulaOverride = True
-                valueOverride = True
+                formula_override = True
+                value_override = True
 
-                if paraType == "SHARED":
-                    if parameterName in sharedParams:
+                if para_type == "SHARED":
+                    if parameter_name in shared_params:
                         # public FamilyParameter AddParameter(
                         # 	ExternalDefinition familyDefinition,
                         # 	BuiltInParameterGroup parameterGroup,
                         # 	bool isInstance
                         # )
                         param = fam.AddParameter(
-                            sharedParams[parameterName], paraGroup, isInstance
+                            shared_params[parameter_name], para_group, is_instance
                         )
                     else:
-                        errorItems.append(
+                        error_items.append(
                             "ERROR: Shared parameter '{}' not found".format(
-                                parameterName
+                                parameter_name
                             )
                         )
-                elif paraType not in ["SORT", "REPLACE", "RENAME"]:
+                elif para_type not in ["SORT", "REPLACE", "RENAME"]:
                     # public FamilyParameter AddParameter(
                     # 	string parameterName,
                     # 	BuiltInParameterGroup parameterGroup,
@@ -234,79 +255,91 @@ def main():
                     # 	bool isInstance
                     # )
                     param = fam.AddParameter(
-                        parameterName, paraGroup, paraType, isInstance
+                        parameter_name, para_group, para_type, is_instance
                     )
 
             if param:
-                if param.Definition.ParameterGroup != paraGroup:
-                    param.Definition.ParameterGroup = paraGroup
+                if param.Definition.ParameterGroup != para_group:
+                    param.Definition.ParameterGroup = para_group
                 if formula:
-                    formulaParams.append(
+                    formula_params.append(
                         {
                             "parameter": param,
-                            "name": parameterName,
+                            "name": parameter_name,
                             "formula": formula,
                             "dependents": depends,
-                            "formulaOverride": formulaOverride,
+                            "formulaOverride": formula_override,
                         }
                     )
 
                 # Store Value to set for each type
-                if not newValue == "" and not param.IsDeterminedByFormula:
-                    valueParams.append([param, newValue, valueOverride])
+                if not new_value == "" and not param.IsDeterminedByFormula:
+                    value_params.append([param, new_value, value_override])
 
-                newParams.append(param)
+                new_params.append(param)
 
         # Set values for parameters
-        familyTypesItor = fam.Types.ForwardIterator()
-        familyTypesItor.Reset()
-        while familyTypesItor.MoveNext():
-            familyType = familyTypesItor.Current
-            fam.CurrentType = familyType
-            for i in valueParams:
-                param, newValue, valueOverride = i[0], i[1], i[2]
-                if valueOverride or not familyType.HasValue(param):
-                    setParam(param, newValue)
+        family_types_itor = fam.Types.ForwardIterator()
+        family_types_itor.Reset()
+        while family_types_itor.MoveNext():
+            family_type = family_types_itor.Current
+            fam.CurrentType = family_type
+            for i in value_params:
+                param, new_value, value_override = i[0], i[1], i[2]
+                if value_override or not family_type.HasValue(param):
+                    setParam(param, new_value)
 
         # Add formulas
-        updatedParams = fam.GetParameters()
-        for fx in formulaParams:
+        updated_params = fam.GetParameters()
+        for fx in formula_params:
             # public void SetFormula(
             # 	FamilyParameter familyParameter,
             # 	string formula
             # )
-            hasDepends = (
+            has_depends = (
                 False if fx["parameter"].Formula and not fx["formulaOverride"] else True
             )
             for d in fx["dependents"]:
-                if not familyHasParameter(updatedParams, d):
-                    hasDepends = False
-            if hasDepends:
+                if not familyHasParameter(updated_params, d):
+                    has_depends = False
+            if has_depends:
                 try:
                     fam.SetFormula(fx["parameter"], str(fx["formula"]))
                 except:
-                    errorItems.append("ERROR: couldn't set formula for '{}'".format(fx["name"]))
+                    error_items.append(
+                        "ERROR: couldn't set formula for '{}'".format(fx["name"])
+                    )
 
     # Report errors
-    if len(errorItems) > 0:
-        forms.alert("\n".join(errorItems), "errors")
+    if len(error_items) > 0:
+        forms.alert("\n".join(error_items), "errors")
 
     # Sort Parameters
-    with Transaction("Sort {} parameters".format(categoryName)) as rvtxn:
+    with Transaction("Sort {} parameters".format(category_name)):
         # Sort parameters according to excel order
-        updatedParams = fam.GetParameters()
-        orderedParams = []
-        for p in inParams:
-            parameterName = p[headers.index("Parameter")]
-            param = familyHasParameter(updatedParams, parameterName)
+        updated_params = fam.GetParameters()
+        ordered_params = []
+        for p in in_params:
+            parameter_name = p[headers.index("Parameter")]
+            param = familyHasParameter(updated_params, parameter_name)
             if param:
-                orderedParams.append(param)
+                ordered_params.append(param)
         try:
             fam.ReorderParameters(
-                orderedParams + [x for x in updatedParams if x not in orderedParams]
+                ordered_params + [x for x in updated_params if x not in ordered_params]
             )
         except:
-            forms.alert("{}".format("\n- ".join([x.Definition.Name for x in updatedParams if x not in orderedParams])))
+            forms.alert(
+                "{}".format(
+                    "\n- ".join(
+                        [
+                            x.Definition.Name
+                            for x in updated_params
+                            if x not in ordered_params
+                        ]
+                    )
+                )
+            )
 
 
 if EXEC_PARAMS.config_mode:

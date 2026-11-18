@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
-"""
-Shared library of utility functions for pattern generation tools.
+"""Shared library of utility functions for pattern generation tools.
+
 - Unit parsing (dim_from_string)
 - Revit element creation (Filled Region)
-- Color/UI converters
+- Color/UI converters.
 """
 
 # pyRevit Imports
-from pyrevit import revit, script, forms, DB
+from pyrevit import revit, DB
 from pyrevit.revit.db.transaction import Transaction
 
 # .NET Imports
 import clr
-import System
 
 clr.AddReference("PresentationFramework")
 from System.Windows.Media import SolidColorBrush, Color as MediaColor
@@ -31,9 +30,7 @@ def db_color_to_wpf_brush(db_color):
 
 
 def db_color_from_hex(hex_color_string):
-    """
-    Converts a hex color string (e.g., '#FF0000' or 'FF0000') to a DB.Color object.
-    """
+    """Converts a hex color string (e.g., '#FF0000' or 'FF0000') to a DB.Color object."""
     # Remove the '#' if it exists
     if hex_color_string.startswith("#"):
         hex_color_string = hex_color_string[1:]
@@ -69,9 +66,8 @@ def hex_from_db_color(db_color):
 
 
 def dim_from_string(dim_as_string, is_metric):
-    """
-    Parses a string (e.g., "100", "1' 6\"", "7.5cm") into Revit's
-    internal units (decimal feet) and the current display units (mm or in).
+    r"""Parses a string (e.g., "100", "1' 6\"", "7.5cm") into Revit's internal units (decimal feet) and the current display units (mm or in).
+
     Uses the user's current IS_METRIC setting to assume default units.
 
     Returns:
@@ -137,9 +133,9 @@ def get_display_unit(dim_int_units, is_metric):
 
 
 def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
-    """
-    Creates a new FilledRegionType that uses the given fill pattern.
-    Returns (True/False, status_message)
+    """Creates a new FilledRegionType that uses the given fill pattern.
+
+    Returns (True/False, status_message).
     """
     # Check if a FilledRegionType with this name already exists
     # - Create Filter:
@@ -164,7 +160,7 @@ def create_filled_region_type(doc, filled_region_name, fill_pattern_element):
         return False, "already exists"
 
     try:
-        with Transaction("Create Filled Region Type: " + filled_region_name) as t:
+        with Transaction("Create Filled Region Type: " + filled_region_name):
             # Get a default type to duplicate
             default_type_id = doc.GetDefaultElementTypeId(
                 DB.ElementTypeGroup.FilledRegionType

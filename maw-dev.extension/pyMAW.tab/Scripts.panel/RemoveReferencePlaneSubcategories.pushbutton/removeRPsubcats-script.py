@@ -1,7 +1,5 @@
 from pyrevit import revit, DB
 from pyrevit import forms
-from pyrevit.revit import query
-from pyrevit.framework import List
 # from pyrevit.revit import Transaction
 # from pyrevit.revit import create
 # from pyrevit import script
@@ -11,14 +9,14 @@ from pyrevit.framework import List
 
 ## Implementation of family load options - always override existing family
 class FamilyLoadOptions(DB.IFamilyLoadOptions):
-    def     OnFamilyFound(self, familyInUse, overwriteParameterValues):
-            overwriteParameterValues = True
-            return True
+    def OnFamilyFound(self, familyInUse, overwriteParameterValues):
+        return True
 
-    def     OnSharedFamilyFound(self, sharedFamily, familyInUse, source, overwriteParameterValues):
-            source = FamilySource.Family
-            overwriteParameterValues = True
-            return True
+    def OnSharedFamilyFound(
+        self, sharedFamily, familyInUse, source, overwriteParameterValues
+    ):
+        return True
+
 
 class CopyUseDestination(DB.IDuplicateTypeNamesHandler):
     # Handle copy and paste errors.
@@ -27,8 +25,9 @@ class CopyUseDestination(DB.IDuplicateTypeNamesHandler):
         # Use destination model types if duplicate.
         return DB.DuplicateTypeAction.UseDestinationTypes
 
+
 currdoc = revit.doc
-familytypes = ("Doors")
+familytypes = "Doors"
 ignorelist = ["<None>", "Secondary Planes"]
 text = ""
 
@@ -43,7 +42,11 @@ for f in DB.FilteredElementCollector(currdoc).OfClass(DB.Family).ToElements():
         text += f.Name + "\r\n"
         familydoc = currdoc.EditFamily(f)
         # Transaction
-        for rp in DB.FilteredElementCollector(familydoc).OfClass(DB.ReferencePlane).ToElements():
+        for rp in (
+            DB.FilteredElementCollector(familydoc)
+            .OfClass(DB.ReferencePlane)
+            .ToElements()
+        ):
             subcatname = rp.LookupParameter("Subcategory").AsValueString()
             if subcatname in ignorelist:
                 continue
@@ -55,7 +58,9 @@ for f in DB.FilteredElementCollector(currdoc).OfClass(DB.Family).ToElements():
             # rpname = rp.LookupParameter("Name")
             rpname = rp.get_Parameter(DB.BuiltInParameter.DATUM_TEXT)
             if rpname.AsString():
-                rpnewname = "{} {} {}".format(rpname.AsString(), subcatname, subcatcount)
+                rpnewname = "{} {} {}".format(
+                    rpname.AsString(), subcatname, subcatcount
+                )
             else:
                 rpnewname = "{} {}".format(subcatname, subcatcount)
             if rpname.Set(rpnewname):
@@ -67,20 +72,17 @@ for f in DB.FilteredElementCollector(currdoc).OfClass(DB.Family).ToElements():
         familydoc.Close(False)
 
 
-
 # Open each family and load into current, override parameters
 # for f in view_elements:
-    # reloaded_family = source_family.LoadFamily(currdoc, FamilyLoadOptions())
-    # source_family.Close(False)
-
+# reloaded_family = source_family.LoadFamily(currdoc, FamilyLoadOptions())
+# source_family.Close(False)
 
 
 # text = str(subcats)
 # for e in sheets:
-    # text += "{} - {}\r\n".format(e.SheetNumber, e.Name)
-    # try:
-        # text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.Category.Name)
-    # except Exception as err:
-        # text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.FamilyCategory.Name)
+# text += "{} - {}\r\n".format(e.SheetNumber, e.Name)
+# try:
+# text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.Category.Name)
+# except Exception as err:
+# text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.FamilyCategory.Name)
 forms.alert(text)
-

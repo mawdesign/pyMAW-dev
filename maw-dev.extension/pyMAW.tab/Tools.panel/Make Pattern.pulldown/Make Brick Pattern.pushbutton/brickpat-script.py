@@ -1,27 +1,22 @@
 # -*- coding: utf-8 -*-
 # pyRevit Imports
-from pyrevit import revit, script, forms, DB
-from pyrevit.revit.db.transaction import Transaction
+from pyrevit import script, forms
 
 # Required Imports
-import wpf, os
-import glob
+import wpf
+import os
 from pyrevit.coreutils import yaml
 
 # Import Shared Config/Material Libraries
-import pattern_config
-import pattern_material
 import pattern_utils
 
 # .NET Imports
 import clr
-import System
 
 clr.AddReference("System")
 from System.Windows import Window
 from System import Uri
 from System.Windows.Media.Imaging import BitmapImage
-from System.Windows.Media import SolidColorBrush, Color as MediaColor
 
 # --- Script/Config Paths ---
 PATH_SCRIPT = script.get_script_path()
@@ -106,7 +101,7 @@ def eval_math_str(formula):
             curr_pos += 1  # skip white space
         elif c in digits or (c == "-" and c1 in digits and last_type == "operator"):
             span = 2 if c == "-" else 1
-            number = formula[curr_pos : curr_pos + span]
+            formula[curr_pos : curr_pos + span]
             number_valid = True
             while number_valid:
                 if is_number(
@@ -230,7 +225,7 @@ class BrickForm(Window):
                 Uri(os.path.join(PATH_IMAGES, "tiledims.png"))
             )
             self.BrickDims.Source = self.brick_diagram
-        except Exception as e:
+        except Exception:
             forms.alert("Could not load diagram images (brickdims.png, tiledims.png).")
 
         # Set unit selection
@@ -392,15 +387,15 @@ def make_brick_pattern():
         return
 
     # Show form to the user
-    UI = BrickForm(settings)
+    ui = BrickForm(settings)
 
     # --- Generation logic ---
-    if UI.DialogResult:
+    if ui.DialogResult:
         # This block executes after the window is closed by "Generate"
 
         try:
             # --- 1. Get Selected Pattern Template ---
-            selected_pattern = settings.get(UI.selected_pattern_name)
+            selected_pattern = settings.get(ui.selected_pattern_name)
             if not selected_pattern:
                 raise Exception("Could not find selected pattern data.")
             template_prefix = ";%UNITS={units}\n;%VERSION=3.0\n; Generated using pyRevit Brick Pattern Maker\n; MAW 2025\n;\n"
@@ -408,12 +403,12 @@ def make_brick_pattern():
 
             # --- 2. Parse Dimensions ---
             h_disp, h_int = pattern_utils.dim_from_string(
-                UI.brick_height_str, IS_METRIC
+                ui.brick_height_str, IS_METRIC
             )
-            w_disp, w_int = pattern_utils.dim_from_string(UI.brick_width_str, IS_METRIC)
-            d_disp, d_int = pattern_utils.dim_from_string(UI.brick_depth_str, IS_METRIC)
+            w_disp, w_int = pattern_utils.dim_from_string(ui.brick_width_str, IS_METRIC)
+            d_disp, d_int = pattern_utils.dim_from_string(ui.brick_depth_str, IS_METRIC)
             m_disp, m_int = pattern_utils.dim_from_string(
-                UI.brick_joint_size_str, IS_METRIC
+                ui.brick_joint_size_str, IS_METRIC
             )
 
             if not all([h_int, w_int, d_int, m_int]):
@@ -445,31 +440,31 @@ def make_brick_pattern():
 
             # --- 5. Run Generation Logic (Placeholders) ---
 
-            if UI.gen_pattern or UI.gen_fillregion or UI.gen_material:
+            if ui.gen_pattern or ui.gen_fillregion or ui.gen_material:
                 # TODO: Create .pat file, then create FillPatternElement
                 print("TODO: Create Fill Pattern from .pat file")
                 # pattern_element, reason = create_revit_fill_pattern_from_pat(...)
 
-                if UI.gen_fillregion:
+                if ui.gen_fillregion:
                     # TODO: Create Filled Region
                     print("TODO: Create Filled Region")
                     # success, fr_reason = pattern_utils.create_filled_region_type(...)
                     pass
 
-            if UI.gen_normal or UI.gen_bump:
+            if ui.gen_normal or ui.gen_bump:
                 # TODO: Get save path from user
                 print("TODO: Ask for save path for images")
                 # save_path = forms.save_file(...)
 
-                if UI.gen_bump:
+                if ui.gen_bump:
                     # TODO: Call bump map generator
                     print("TODO: Generate Bump Map")
 
-                if UI.gen_normal:
+                if ui.gen_normal:
                     # TODO: Call normal map generator
                     print("TODO: Generate Normal Map")
 
-            if UI.gen_material:
+            if ui.gen_material:
                 # TODO: Create material
                 print("TODO: Create Material")
                 # material, message = pattern_material.create_or_update_material(...)

@@ -1,7 +1,6 @@
 from pyrevit import revit, DB
 from pyrevit import forms
-from pyrevit.revit import query
-from pyrevit.framework import List
+
 # from pyrevit.revit import Transaction
 # from pyrevit.revit import create
 # from pyrevit import script
@@ -12,16 +11,17 @@ Import from another open document into current document all detail and annotatio
 from specific sheets or views.
 """
 
+
 ## Implementation of family load options - always override existing family
 class FamilyLoadOptions(DB.IFamilyLoadOptions):
-    def     OnFamilyFound(self, familyInUse, overwriteParameterValues):
-            overwriteParameterValues = True
-            return True
+    def OnFamilyFound(self, familyInUse, overwriteParameterValues):
+        return True
 
-    def     OnSharedFamilyFound(self, sharedFamily, familyInUse, source, overwriteParameterValues):
-            source = FamilySource.Family
-            overwriteParameterValues = True
-            return True
+    def OnSharedFamilyFound(
+        self, sharedFamily, familyInUse, source, overwriteParameterValues
+    ):
+        return True
+
 
 class CopyUseDestination(DB.IDuplicateTypeNamesHandler):
     # Handle copy and paste errors.
@@ -30,32 +30,56 @@ class CopyUseDestination(DB.IDuplicateTypeNamesHandler):
         # Use destination model types if duplicate.
         return DB.DuplicateTypeAction.UseDestinationTypes
 
+
 currdoc = revit.doc
 viewtypes = (DB.ViewDrafting,)
-familytypes = ("Generic Annotations", "Detail Items", "Detail Item Tags", "Keynote Tags")
+familytypes = (
+    "Generic Annotations",
+    "Detail Items",
+    "Detail Item Tags",
+    "Keynote Tags",
+)
 
 
 # Select document to import from
 open_docs = [d for d in revit.docs if not (d.IsLinked or d.IsFamilyDocument)]
 open_docs.remove(currdoc)
 if len(open_docs) > 1:
-    sourcedoc = forms.select_open_docs(title='Select Document to import from', multiple=False, check_more_than_one=True, filterfunc=lambda d: not d.IsFamilyDocument)
+    sourcedoc = forms.select_open_docs(
+        title="Select Document to import from",
+        multiple=False,
+        check_more_than_one=True,
+        filterfunc=lambda d: not d.IsFamilyDocument,
+    )
 else:
     sourcedoc = open_docs[0]
-forms.alert_ifnot(sourcedoc, "No document selected", exitscript = True)
+forms.alert_ifnot(sourcedoc, "No document selected", exitscript=True)
 
 
 # Select sheets or views to import
-choice = forms.ask_for_one_item(['Sheets', 'Views'], default = 'Sheets', title = sourcedoc.Title, prompt='Import whole sheets or specific views?')
-if choice == 'Sheets':
-    sheets = forms.select_sheets(doc = sourcedoc, multiple = True)#, use_selection = True)
+choice = forms.ask_for_one_item(
+    ["Sheets", "Views"],
+    default="Sheets",
+    title=sourcedoc.Title,
+    prompt="Import whole sheets or specific views?",
+)
+if choice == "Sheets":
+    sheets = forms.select_sheets(
+        doc=sourcedoc, multiple=True
+    )  # , use_selection = True)
     views = []
     for s in sheets:
-        views = list(set(views + [sourcedoc.GetElement(x) for x in s.GetAllPlacedViews()]))
-if choice == 'Views':
-    views = forms.select_views(doc = sourcedoc, multiple = True, filterfunc=lambda x: isinstance(x, viewtypes))
-forms.alert_ifnot(len(views) > 0, "No views selected (perhaps empty sheets?)", exitscript = True)
-    
+        views = list(
+            set(views + [sourcedoc.GetElement(x) for x in s.GetAllPlacedViews()])
+        )
+if choice == "Views":
+    views = forms.select_views(
+        doc=sourcedoc, multiple=True, filterfunc=lambda x: isinstance(x, viewtypes)
+    )
+forms.alert_ifnot(
+    len(views) > 0, "No views selected (perhaps empty sheets?)", exitscript=True
+)
+
 
 # Get all families in current document
 currdoc_families = []
@@ -70,17 +94,22 @@ for f in DB.FilteredElementCollector(currdoc).OfClass(DB.Family).ToElements():
 view_elements = []
 view_element_ids = []
 for v in views:
-    for e in DB.FilteredElementCollector(sourcedoc, v.Id).WhereElementIsNotElementType().ToElements():
+    for e in (
+        DB.FilteredElementCollector(sourcedoc, v.Id)
+        .WhereElementIsNotElementType()
+        .ToElements()
+    ):
         if e.Category and e.Category.Name in familytypes:
             try:
                 f = e.Symbol.Family
-                if f.Id not in view_element_ids \
-                        and f.Name in currdoc_families_names: # filter out new families
+                if (
+                    f.Id not in view_element_ids and f.Name in currdoc_families_names
+                ):  # filter out new families
                     view_element_ids.append(f.Id)
                     view_elements.append(f)
                 elif f.Name not in currdoc_families_names:
                     print("Skipping {} ({})".format(f.Name, f.Id))
-            except Exception as err:
+            except Exception:
                 continue
 
 
@@ -97,25 +126,25 @@ for f in view_elements:
 # cp_options.SetDuplicateTypeNamesHandler(CopyUseDestination())
 
 # if choice == 'Sheets':
-    # with revit.Transaction("Copy Sheet", doc = currdoc):
-        # # for s in sheets:
-            # try:
-                # # revit.create.copy_elements([s.Id], sourcedoc, currdoc)
-                # # DB.ElementTransformUtils.CopyElements(sourcedoc, List[DB.ElementId]([s.Id]), currdoc, None, cp_options)
-                # revit.UI.UIDocument(sourcedoc)
-                # revit.uidoc.Selection.SetElementIds(List[DB.ElementId]([s.Id for s in sheets]))
-                # revit.uidoc.RefreshActiveView()
-                # # text += "Sheet {} worked\r\n".format(sheet[0].Name)
-            # except Exception as create_err:
-                # text += "Sheet {} {} failed with error {}\r\n".format(s.Name, s.Id, create_err)
+# with revit.Transaction("Copy Sheet", doc = currdoc):
+# # for s in sheets:
+# try:
+# # revit.create.copy_elements([s.Id], sourcedoc, currdoc)
+# # DB.ElementTransformUtils.CopyElements(sourcedoc, List[DB.ElementId]([s.Id]), currdoc, None, cp_options)
+# revit.UI.UIDocument(sourcedoc)
+# revit.uidoc.Selection.SetElementIds(List[DB.ElementId]([s.Id for s in sheets]))
+# revit.uidoc.RefreshActiveView()
+# # text += "Sheet {} worked\r\n".format(sheet[0].Name)
+# except Exception as create_err:
+# text += "Sheet {} {} failed with error {}\r\n".format(s.Name, s.Id, create_err)
 
 text = "Now copy and paste these sheets:\r\n"
 for e in sheets:
     text += "{} - {}\r\n".format(e.SheetNumber, e.Name)
     # try:
-        # text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.Category.Name)
+    # text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.Category.Name)
     # except Exception as err:
-        # text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.FamilyCategory.Name)
+    # text += "[{}] {} ({})\r\n".format(e.Id, e.Name, e.FamilyCategory.Name)
 forms.alert(text)
 
 
@@ -123,9 +152,7 @@ forms.alert(text)
 # from pyrevit.revit import Transaction
 
 # with Transaction("transaction name", doc):
-    # create.copy_elements(element_ids, src_doc, dest_doc)
-
-
+# create.copy_elements(element_ids, src_doc, dest_doc)
 
 
 # https://sites.google.com/site/revitapi123/postablecommand-example
@@ -144,17 +171,17 @@ forms.alert(text)
 # clr.AddReference("System.Windows.Forms")
 
 # def SetText(text):
-    # def thread_proc():
-        # System.Windows.Forms.Clipboard.SetText(text)
-    # t = Thread(ThreadStart(thread_proc))
-    # t.ApartmentState = System.Threading.ApartmentState.STA
-    # t.Start()
+# def thread_proc():
+# System.Windows.Forms.Clipboard.SetText(text)
+# t = Thread(ThreadStart(thread_proc))
+# t.ApartmentState = System.Threading.ApartmentState.STA
+# t.Start()
 
 # try:
-	# if IN[0] != "" and IN[0] != None:
-		# SetText(IN[0])
-		# OUT = IN[0]
-	# else:
-		# OUT = "Invalid input: Empty string or Null value!"
+# if IN[0] != "" and IN[0] != None:
+# SetText(IN[0])
+# OUT = IN[0]
+# else:
+# OUT = "Invalid input: Empty string or Null value!"
 # except:
-	# OUT = 'Data could not be copied to clipboard!'
+# OUT = 'Data could not be copied to clipboard!'

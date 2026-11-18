@@ -1,0 +1,29 @@
+target-version = "py37"
+line-length = 88
+extend-exclude = ["**/pyqrcode"]
+builtins = [
+    "__revit__",
+    "__commandpath__",
+    "__configcommandpath__",
+    "__cmdoptions__",
+    "__context__",
+    "__doc__",
+    "__forceddebugmode__",
+    "__shiftclick__",
+    "__title__",
+    "__author__",
+    "__persistentengine__",
+    "unicode",
+    "basestring",
+    "xrange",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "N", "B", "D"]
+ignore = ["D1", "D203", "D212", "N802", "N803", "E402"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[format]
+quote-style = "double"

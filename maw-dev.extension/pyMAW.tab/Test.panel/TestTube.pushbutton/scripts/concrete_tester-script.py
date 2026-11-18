@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-Concrete Tester
-"""
-from pyrevit import revit, script, forms, DB
+"""Concrete Tester."""
+
+from pyrevit import script
 import wpf
 import sys
 import os
 import clr
 import time
+import traceback
 
 # -------------------- .NET Imports --------------------
 clr.AddReference("System.Drawing")
@@ -17,9 +17,14 @@ clr.AddReference("WindowsBase")
 
 from System.IO import MemoryStream, SeekOrigin, FileStream, FileMode
 from System.Windows import Window, Visibility
-from System.Windows.Media.Imaging import BitmapImage, BitmapCacheOption, PngBitmapEncoder, BitmapFrame
+from System.Windows.Media.Imaging import (
+    BitmapImage,
+    BitmapCacheOption,
+    PngBitmapEncoder,
+    BitmapFrame,
+)
 from System.Drawing.Imaging import ImageFormat
-import Microsoft.Win32 
+import Microsoft.Win32
 
 # -------------------- Local Import --------------------
 current_dir = os.path.dirname(__file__)
@@ -27,9 +32,11 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 import concrete_texture
+
 PATH_SCRIPT = script.get_script_path()
 
 # -------------------- Logic --------------------
+
 
 class ConcreteTester(Window):
     def __init__(self):
@@ -56,11 +63,11 @@ class ConcreteTester(Window):
     def update_texture(self, sender, args):
         self.statusText.Text = "Generating..."
         self.placeholderText.Visibility = Visibility.Collapsed
-        
+
         # Get Inputs
         w, h = self.get_resolution()
         seed = 1234
-        
+
         pit_density = self.sliderDensity.Value
         pit_depth = self.sliderDepth.Value
         grain = self.sliderGrain.Value
@@ -74,16 +81,17 @@ class ConcreteTester(Window):
         try:
             # Call Generator
             bump_bmp, normal_bmp, _ = concrete_texture.create_concrete_textures(
-                width=w, 
-                height=h, 
+                width=w,
+                height=h,
                 seed=seed,
+                generate_normal=False,
                 normal_strength=normal_str,
                 pit_density=pit_density,
                 pit_depth=pit_depth,
                 grain_strength=grain,
                 base_scale=scale,
                 base_depth=base_depth,
-                trowel_strength=trowel
+                trowel_strength=trowel,
             )
 
             # Convert System.Drawing.Bitmap -> WPF BitmapImage
@@ -99,15 +107,16 @@ class ConcreteTester(Window):
             bmp_image.Freeze()
 
             self.imgPreview.Source = bmp_image
-            
+
             end_time = time.time()
             elapsed = end_time - start_time
-            
-            self.statusText.Text = "Complete" 
+
+            self.statusText.Text = "Complete"
             self.timeText.Text = "Time: {:.3f} sec".format(elapsed)
 
             bump_bmp.Dispose()
-            normal_bmp.Dispose()
+            if normal_bmp is not None:
+                normal_bmp.Dispose()
             ms.Close()
 
         except Exception as e:
@@ -124,19 +133,23 @@ class ConcreteTester(Window):
         dialog.FileName = "concrete_texture"
         dialog.DefaultExt = ".png"
         dialog.Filter = "PNG Files (.png)|*.png"
-        
-        if dialog.ShowDialog() == True:
+
+        if dialog.ShowDialog():
             try:
                 # Use WPF Encoder to save the existing BitmapSource
                 encoder = PngBitmapEncoder()
                 encoder.Frames.Add(BitmapFrame.Create(self.imgPreview.Source))
-                
+
                 with FileStream(dialog.FileName, FileMode.Create) as stream:
                     encoder.Save(stream)
-                
+
                 self.statusText.Text = "Image Saved."
             except Exception as e:
                 self.statusText.Text = "Save Error: " + str(e)
 
+
 if __name__ == "__main__":
-    ConcreteTester()
+    try:
+        ConcreteTester()
+    except Exception:
+        print(traceback.format_exc())
