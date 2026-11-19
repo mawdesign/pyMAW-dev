@@ -1,3 +1,5 @@
 title: Material Colours from List
 tooltip: Create copies of selected materials for all the colours from a selected Excel file
-author: MAW
+author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021
+context: doc-project

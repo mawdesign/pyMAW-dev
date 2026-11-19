@@ -1,6 +1,7 @@
 title: "Manage\nMaterials"
 tooltip: Tools for managing Revit materials
 author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021
 layout:
   - Export
   - Import

@@ -1,3 +1,5 @@
 title: Export Materials List
 tooltip: Export list of materials from project to Excel spreadsheet
-author: MAW
+author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021
+context: doc-project

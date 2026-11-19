@@ -1,0 +1,12 @@
+{
+  "_comment": "Admin settings for the material tools. 'libraries' are offered by Add Material Library. 'texture_fallback_paths' are searched last when resolving material image paths; relative paths are resolved from the Revit.exe folder.",
+  "libraries": [
+    {
+      "name": "** WAM Materials **",
+      "file": "//wam/data/Revit/Staff_Library/Wellington/MAW/Materials/WAM Materials.adsklib"
+    }
+  ],
+  "texture_fallback_paths": [
+    "..\\..\\..\\_CAD\\_Revit\\Library\\_Data\\Revit Materials Assets"
+  ]
+}

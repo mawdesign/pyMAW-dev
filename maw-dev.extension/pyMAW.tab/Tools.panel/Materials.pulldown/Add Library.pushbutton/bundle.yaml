@@ -1,3 +1,4 @@
 title: Add Material Library
 tooltip: Add a material library (.adsklib) to the user and/or pc materials browser
-author: MAW
+author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021

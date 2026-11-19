@@ -13,7 +13,7 @@ from pyrevit import forms, script
 from pyrevit import revit
 
 # # ------------------ module imports --------------------
-import revitini
+import revitforms
 import revitmaterials
 
 SEVERITY_SYMBOLS = {
@@ -162,13 +162,13 @@ def repath_materials():
 
     user_paths = revitmaterials.get_material_search_paths(ini="user")
     default_paths = revitmaterials.get_material_search_paths(ini="default")
-    preferred_paths = revitini.edit_option_paths(
+    preferred_paths = revitforms.edit_option_paths(
         user_paths, default_paths, value_delim="|"
     )
     if not preferred_paths:
         script.exit()
 
-    materials = revitmaterials.get_materials(doc)
+    materials = revitmaterials.get_materials(doc, sort=False)
     asset_paths = []
     for material in materials:
         mat_paths = revitmaterials.get_material_texture_paths(

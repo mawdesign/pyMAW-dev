@@ -1,3 +1,5 @@
 title: Import Materials List
 tooltip: Import materials from an Excel spreadsheet into the current project
-author: MAW
+author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021
+context: doc-project

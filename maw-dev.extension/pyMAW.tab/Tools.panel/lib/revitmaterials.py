@@ -1,31 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Materials Management Tools."""
+"""Revit material helpers: retrieval, usage, appearance assets and texture paths."""
 
 # # -------------- Standard Library Imports --------------
 import os
 import timeit
 from collections import defaultdict
-import xml.etree.ElementTree as ET
 
 # # ------------------ pyRevit Imports -------------------
 from pyrevit import revit
 from pyrevit import DB
 
 # # ------------------ module imports --------------------
+import revitmaterialconfig
 import revitini
-
-# GET REVIT TEMP PATH
-# -------------------
-# from pathlib import Path
-# import tempfile
-# REVITTEMP = Path(tempfile.gettempdir())
-# print(REVITTEMP) # since 2019 has a GUID at the end of environment TMP value
-#
-# GET MATERIAL THUMBNAIL
-# ----------------------
-# Appearance asset > render asset > find by name (string) > thumbnail
-# e.g. "tmp:?MaterialThumbnails_PID_6d48\237ea2532c0Metal_Roofing_Trapezoidal(3).png"
-# replace "tmp:?" with REVITTEMP
 
 # Globals
 usage_cache = defaultdict(lambda: {"count": 0, "area": 0.0, "volume": 0.0})
@@ -52,6 +39,7 @@ def _build_material_usage_cache(doc):
         }
     }.
     """
+    usage_cache.clear()
     elements = (
         DB.FilteredElementCollector(doc).WhereElementIsNotElementType().ToElements()
     )
@@ -64,7 +52,7 @@ def _build_material_usage_cache(doc):
                 continue
 
             for mat_id in mat_ids:
-                key = mat_id.IntegerValue
+                key = get_element_id_value(mat_id)
                 usage_cache[key]["count"] += 1
 
                 # Area
@@ -75,7 +63,7 @@ def _build_material_usage_cache(doc):
                         area, DB.UnitTypeId.SquareMeters
                     )
                     usage_cache[key]["area"] += area_m2
-                except:
+                except Exception:
                     pass
 
                 # Volume
@@ -86,27 +74,167 @@ def _build_material_usage_cache(doc):
                         volume, DB.UnitTypeId.CubicMeters
                     )
                     usage_cache[key]["volume"] += volume_m3
-                except:
+                except Exception:
                     pass
 
-        except:
+        except Exception:
             pass
     return
 
 
-def get_pattern_name(doc, pattern_id):
+NO_PATTERN = "<none>"
+
+
+# ----------------------------------------------------------------------
+# Element ids
+# ----------------------------------------------------------------------
+def get_element_id_value(element_id):
+    """Integer value of an ElementId (``.Value`` from Revit 2024, else ``.IntegerValue``)."""
     try:
-        if pattern_id and pattern_id != DB.ElementId.InvalidElementId:
+        return element_id.Value
+    except AttributeError:
+        return element_id.IntegerValue
+
+
+def is_valid_id(element_id):
+    """True if element_id is set and not ElementId.InvalidElementId."""
+    return bool(element_id) and element_id != DB.ElementId.InvalidElementId
+
+
+# ----------------------------------------------------------------------
+# Retrieval
+# ----------------------------------------------------------------------
+def get_materials(doc, sort=True):
+    """Returns all materials in the document, sorted by name unless sort=False."""
+    materials = list(DB.FilteredElementCollector(doc).OfClass(DB.Material))
+    if sort:
+        materials.sort(key=lambda m: m.Name.lower())
+    return materials
+
+
+def get_materials_by_name(doc):
+    """Returns {material name: Material}."""
+    return {m.Name: m for m in get_materials(doc, sort=False)}
+
+
+def get_fill_patterns_by_name(doc):
+    """Returns {pattern name: ElementId}."""
+    patterns = DB.FilteredElementCollector(doc).OfClass(DB.FillPatternElement)
+    return {p.Name: p.Id for p in patterns}
+
+
+def get_pattern_name(doc, pattern_id):
+    """Fill pattern name for an id; NO_PATTERN if unset."""
+    try:
+        if is_valid_id(pattern_id):
             pat = doc.GetElement(pattern_id)
             if pat:
                 return pat.Name
     except Exception as e:
         return "Error: {}".format(e)
 
-    return "<none>"
+    return NO_PATTERN
 
 
+def get_pattern_id(pattern_name, pattern_lookup):
+    """Reciprocal of get_pattern_name; pattern_lookup from get_fill_patterns_by_name."""
+    if not pattern_name or pattern_name == NO_PATTERN:
+        return DB.ElementId.InvalidElementId
+    return pattern_lookup.get(pattern_name, DB.ElementId.InvalidElementId)
+
+
+# ----------------------------------------------------------------------
+# Material properties
+# ----------------------------------------------------------------------
+def get_material_text(material, bip):
+    """String value of a built-in parameter; "" if the parameter is missing."""
+    param = material.get_Parameter(bip)
+    return (param.AsString() or "") if param else ""
+
+
+def set_material_text(material, bip, value):
+    """Set a built-in parameter. Returns True if set."""
+    param = material.get_Parameter(bip)
+    if not param or param.IsReadOnly:
+        return False
+    try:
+        return bool(param.Set(value))
+    except Exception:
+        return False
+
+
+def get_transparency(material):
+    """Transparency as a fraction 0-1."""
+    param = material.get_Parameter(DB.BuiltInParameter.MATERIAL_PARAM_TRANSPARENCY)
+    return param.AsInteger() / 100.0 if param else 0.0
+
+
+def set_transparency(material, fraction):
+    """Reciprocal of get_transparency. Returns True if set."""
+    return set_material_text(
+        material,
+        DB.BuiltInParameter.MATERIAL_PARAM_TRANSPARENCY,
+        int(round(float(fraction) * 100)),
+    )
+
+
+def is_material_parameter(param):
+    """True if a family parameter is a Material reference (Revit 2021+)."""
+    try:
+        return param.Definition.GetDataType() == DB.SpecTypeId.Reference.Material
+    except AttributeError:  # Revit 2021
+        return param.Definition.ParameterType == DB.ParameterType.Material
+
+
+# ----------------------------------------------------------------------
+# Usage
+# ----------------------------------------------------------------------
+def build_usage_cache(doc):
+    """Fill usage_cache for all materials in use. Call before get_material_usage."""
+    _build_material_usage_cache(doc)
+
+
+def get_material_usage(material):
+    """Returns (count, area m2, volume m3) from the usage cache."""
+    data = usage_cache.get(get_element_id_value(material.Id), None)
+
+    if not data:
+        return 0, 0.0, 0.0
+
+    return (data["count"], data["area"], data["volume"])
+
+
+def find_material_users(doc, material, limit=5):
+    """Returns up to ``limit`` ElementIds (as strings) of elements using the material.
+
+    Checks placed instances (geometry, layers, painted faces) then element types,
+    stopping early.
+    """
+    target_id = material.Id
+    found = []
+
+    for el in DB.FilteredElementCollector(doc).WhereElementIsNotElementType():
+        if not el.Category:
+            continue
+        if target_id in el.GetMaterialIds(False) or target_id in el.GetMaterialIds(True):
+            found.append(el.Id.ToString())
+            if len(found) >= limit:
+                return found
+
+    for el_type in DB.FilteredElementCollector(doc).WhereElementIsElementType():
+        if target_id in el_type.GetMaterialIds(False):
+            found.append(el_type.Id.ToString())
+            if len(found) >= limit:
+                return found
+
+    return found
+
+
+# ----------------------------------------------------------------------
+# Appearance assets
+# ----------------------------------------------------------------------
 def get_asset(doc, material, asset_type="appearance"):
+    """Returns {"id": ElementId or None, "name": str} for the material's asset."""
     asset_data = {"id": None, "name": ""}
     if asset_type != "appearance":
         asset_data["name"] = "Error: Only appearance assets implemented"
@@ -114,7 +242,7 @@ def get_asset(doc, material, asset_type="appearance"):
     try:
         asset_id = material.AppearanceAssetId
 
-        if asset_id and asset_id != DB.ElementId.InvalidElementId:
+        if is_valid_id(asset_id):
             asset = doc.GetElement(asset_id)
 
             if asset:
@@ -130,38 +258,67 @@ def get_asset(doc, material, asset_type="appearance"):
     return asset_data
 
 
-def get_material_usage(material):
-    data = usage_cache.get(material.Id.IntegerValue, None)
+def duplicate_appearance_asset(doc, material, asset_name):
+    """Duplicate the material's appearance asset. Returns the new asset, or None."""
+    if not is_valid_id(material.AppearanceAssetId):
+        return None
 
-    if not data:
-        return 0, 0.0, 0.0
+    try:
+        return doc.GetElement(material.AppearanceAssetId).Duplicate(asset_name)
+    except Exception:
+        return None
 
-    return (data["count"], data["area"], data["volume"])
+
+def set_asset_colour(doc, asset_id, colour):
+    """Set the generic diffuse colour of an appearance asset. Returns True if set."""
+    if not is_valid_id(asset_id):
+        return False
+
+    edit_scope = DB.Visual.AppearanceAssetEditScope(doc)
+
+    try:
+        asset = edit_scope.Start(asset_id)
+        prop = asset.FindByName(DB.Visual.Generic.GenericDiffuse)
+        if prop:
+            prop.SetValueAsColor(colour)
+        edit_scope.Commit(True)
+        return bool(prop)
+    except Exception as e:
+        print(str(e))
+        try:
+            edit_scope.Cancel()
+        except Exception:
+            pass
+        return False
 
 
+def get_asset_colour(doc, asset_id):
+    """Reciprocal of set_asset_colour. Returns DB.Color, or None."""
+    if not is_valid_id(asset_id):
+        return None
+
+    asset_elem = doc.GetElement(asset_id)
+    if not asset_elem:
+        return None
+
+    prop = asset_elem.GetRenderingAsset().FindByName(DB.Visual.Generic.GenericDiffuse)
+    return prop.GetValueAsColor() if prop else None
+
+
+# ----------------------------------------------------------------------
+# Texture search paths
+# ----------------------------------------------------------------------
 def get_material_search_paths(ini="user"):
-    """Returns:
-
-    [
-        ordered list of material search paths: string
-    ].
-    """
-    global texture_paths
-
-    texture_paths = [AUTODESK_TEXTURE_PATH]
+    """Returns ordered list of material search paths (strings)."""
     # potentially also:
     # C:\Program Files (x86)\Common Files\Autodesk Shared\Materials\Textures\1\Mats\
-    # C:\Program Files (x86)\Common Files\Autodesk Shared\Materials\Textures\2\Mats\
-    # C:\Program Files (x86)\Common Files\Autodesk Shared\Materials\Textures\3\Mats\
-
-    texture_paths += revitini.get_option_paths(
+    # (and ...\2\Mats, ...\3\Mats)
+    return [AUTODESK_TEXTURE_PATH] + revitini.get_option_paths(
         "Directories", "AdditionalRenderAppearancePaths", ini=ini
     )
 
-    return texture_paths
 
-
-def resolve_material_image_path(raw_path, texture_paths):
+def resolve_material_image_path(raw_path, texture_paths, fallback_roots=None):
     """Resolve a material image path using Revit-like logic.
 
     Args:
@@ -170,6 +327,9 @@ def resolve_material_image_path(raw_path, texture_paths):
         texture_paths (list[str]):
             Fully resolved absolute search locations.
             Includes AdditionalRenderPaths and any company libraries.
+        fallback_roots (list[str], optional):
+            Extra absolute folders searched last (method "Ini Fix"),
+            e.g. a library folder missing from Revit.ini.
 
     Returns:
         (
@@ -246,21 +406,17 @@ def resolve_material_image_path(raw_path, texture_paths):
     #
     # 5b. Revit.ini fix
     #
-    missing_ini = revitini.resolve_revit_path(
-        "..\\..\\..\\_CAD\\_Revit\\Library\\_Data\Revit Materials Assets\\"
-    )
-    candidate = os.path.normpath(os.path.join(missing_ini, path))
+    if not os.path.isabs(path):
+        for root in fallback_roots or []:
+            candidate = os.path.normpath(os.path.join(root, path))
 
-    if os.path.exists(candidate):
-        return finish(candidate, "Ini Fix")
+            if os.path.exists(candidate):
+                return finish(candidate, "Ini Fix")
 
     #
     # 6. Missing
     #
     return finish("<not found>", "Missing")
-
-
-import os
 
 
 def make_relative_material_path(resolved_path, preferred_paths):
@@ -415,11 +571,15 @@ def classify_paths(path_data, preferred_paths, prefer_relative=True):
     return path_data
 
 
-def get_material_texture_paths(material, doc, texture_paths=None, ini="user"):
+def get_material_texture_paths(
+    material, doc, texture_paths=None, ini="user", fallback_roots=None
+):
     paths = []
     seen_paths = set()
     if not texture_paths:
         texture_paths = get_material_search_paths(ini)
+    if fallback_roots is None:
+        fallback_roots = revitmaterialconfig.get_texture_fallback_paths()
 
     asset_id = material.AppearanceAssetId
 
@@ -452,7 +612,7 @@ def get_material_texture_paths(material, doc, texture_paths=None, ini="user"):
                             prop.Name + ":" + raw_path
                         )  # Track that we've seen this path
                         resolved_path, method, elapsed_ms = resolve_material_image_path(
-                            raw_path, texture_paths
+                            raw_path, texture_paths, fallback_roots
                         )
                         paths.append(
                             {
@@ -472,16 +632,6 @@ def get_material_texture_paths(material, doc, texture_paths=None, ini="user"):
     return paths
 
 
-def get_materials(doc):
-    try:
-        materials = DB.FilteredElementCollector(doc).OfClass(DB.Material).ToElements()
-        _build_material_usage_cache(doc)
-        return materials
-    except Exception:
-        # failed to get materials
-        return None
-
-
 def update_asset_name(doc, asset_id, new_name):
     """Returns True if asset is updated."""
     if asset_id == DB.ElementId.InvalidElementId:
@@ -493,8 +643,8 @@ def update_asset_name(doc, asset_id, new_name):
         return False
 
     with revit.Transaction("Rename Appearance Asset"):
+        edit_scope = DB.Visual.AppearanceAssetEditScope(doc)
         try:
-            edit_scope = DB.Visual.AppearanceAssetEditScope(doc)
             edit_scope.Start(asset_id)
 
             asset_elem.Name = new_name
@@ -504,6 +654,10 @@ def update_asset_name(doc, asset_id, new_name):
 
         except Exception as e:
             print(str(e))
+            try:
+                edit_scope.Cancel()
+            except Exception:
+                pass
 
     return False
 
@@ -520,21 +674,24 @@ def update_asset_path(doc, asset_id, old_path, new_path):
 
     edit_scope = DB.Visual.AppearanceAssetEditScope(doc)
     asset = edit_scope.Start(asset_id)
+    any_updated = False
 
-    for i in range(asset.Size):
-        prop = asset[i]
+    try:
+        for i in range(asset.Size):
+            prop = asset[i]
 
-        try:
-            if prop.NumberOfConnectedProperties < 1:
-                continue
+            try:
+                if prop.NumberOfConnectedProperties < 1:
+                    continue
 
-            connected = prop.GetConnectedProperty(0)
-            bitmap_prop = connected.FindByName(
-                DB.Visual.UnifiedBitmap.UnifiedbitmapBitmap
-            )
-            updated = False
+                connected = prop.GetConnectedProperty(0)
+                bitmap_prop = connected.FindByName(
+                    DB.Visual.UnifiedBitmap.UnifiedbitmapBitmap
+                )
+                if not bitmap_prop:
+                    continue
 
-            if bitmap_prop:
+                updated = False
                 updated_paths = []
                 for raw_path in bitmap_prop.Value.split("|"):
                     if raw_path and raw_path == old_path:
@@ -542,159 +699,28 @@ def update_asset_path(doc, asset_id, old_path, new_path):
                         updated = True
                     elif raw_path:
                         updated_paths.append(raw_path)
-            if updated:
-                updated_path = "|".join(updated_paths)
-                if bitmap_prop.IsValidValue(updated_path):
-                    bitmap_prop.Value = updated_path
-                    edit_scope.Commit(False)
-                    return True
 
-        except Exception as e:
-            print(str(e))
+                if updated:
+                    updated_path = "|".join(updated_paths)
+                    if bitmap_prop.IsValidValue(updated_path):
+                        bitmap_prop.Value = updated_path
+                        any_updated = True
 
-    return False
+            except Exception as e:
+                print(str(e))
 
-
-def xml_get_or_create_libraries_element(parent):
-    """Return Libraries element, creating it if required."""
-    libraries = parent.find("Libraries")
-
-    if libraries is None:
-        libraries = ET.SubElement(parent, "Libraries")
-
-    return libraries
-
-
-def xml_add_library_element_first(libraries, name, filepath):
-    """Add library as first item, removing any existing copy."""
-    # Remove existing entries with same path or name
-    for lib in list(libraries):
-        if lib.tag == "Library" and (
-            lib.get("name") == name or lib.get("file") == filepath
-        ):
-            libraries.remove(lib)
-
-    # Create new entry
-    new_lib = ET.Element("Library")
-    new_lib.set("name", name)
-    new_lib.set("file", filepath)
-
-    # Insert at beginning
-    libraries.insert(0, new_lib)
-
-
-def xml_material_library_is_configured(root, name, path, destination):
-    material_browser = root.find(".//MaterialBrowser")
-
-    if material_browser is None:
-        return False
-
-    if destination in ["material", "both"]:
-        if material_browser.get("isLibraryPaneVisible") != "1":
-            return False
-
-        libraries = material_browser.find("Libraries")
-        if libraries is None:
-            return False
-
-        lib = libraries.find("Library")
-        if not lib:
-            return False
-        if lib.get("name") != name:
-            return False
-        if lib.get("file") != path:
-            return False
-
-    asset_browser = root.find(".//AspectBrowser")
-
-    if asset_browser is None:
-        return False
-
-    if destination in ["asset", "both"]:
-        libraries = asset_browser.find("Libraries")
-        if libraries is None:
-            return False
-
-        lib = libraries.find("Library")
-        if not lib:
-            return False
-        if lib.get("name") != name:
-            return False
-        if lib.get("file") != path:
-            return False
-
-    return True
-
-
-def xml_add_material_library(name, path, xml_path, destination):
-    """Add a material library to list of material or asset libraries."""
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    material_browser = root.find(".//MaterialBrowser")
-    asset_browser = root.find(".//AspectBrowser")
-
-    if xml_material_library_is_configured(root, name, path, destination):
-        return ""  # no change required
-
-    try:
-        if material_browser is not None and destination in ["material", "both"]:
-            material_browser.set("isLibraryPaneVisible", "1")
-            libraries = xml_get_or_create_libraries_element(material_browser)
-            xml_add_library_element_first(libraries, name, path)
-
-        if asset_browser is not None and destination in ["asset", "both"]:
-            libraries = xml_get_or_create_libraries_element(asset_browser)
-            xml_add_library_element_first(libraries, name, path)
-
-        tree.write(xml_path, encoding="utf-8", xml_declaration=False)
-        return ""
+        if any_updated:
+            edit_scope.Commit(False)
+        else:
+            edit_scope.Cancel()
     except Exception as e:
-        return e
+        print(str(e))
+        any_updated = False
+        try:
+            edit_scope.Cancel()
+        except Exception:
+            pass
+
+    return any_updated
 
 
-def config_add_material_library(name, path, source="user", destination="both"):
-    """Adds a material library (.adsklib) to the MaterialUIConfig.xml.
-
-    Parameters.
-    ----------
-    name: display name for the library
-    path: path to the library
-    source:  "user" (default), "appdata", or "both"
-    destination: material = material browser
-                 asset    = asset browser
-                 both     = add to both (default)
-
-    Returns:
-    -------
-    True if successful
-    """
-    version = __revit__.Application.VersionNumber
-    errors = ""
-
-    xml_paths = []
-    if source in ["user", "both"]:
-        xml_path = r"C:\Users\%USERNAME%\AppData\Roaming\Autodesk\Revit\Autodesk Revit {}\MaterialUIConfig.xml".format(
-            version
-        )
-        xml_path = os.path.expandvars(xml_path)
-        if os.path.exists(xml_path):
-            xml_paths.append(xml_path)
-
-    if source in ["appdata", "both"]:
-        xml_path = (
-            r"C:\ProgramData\Autodesk\RVT {}\UserDataCache\MaterialUIConfig.xml".format(
-                version
-            )
-        )
-        xml_path = os.path.expandvars(xml_path)
-        if os.path.exists(xml_path):
-            xml_paths.append(xml_path)
-
-    if len(xml_paths) == 0:  # No path found counts as a fail
-        return "MaterialUIConfig.xml file not found for this user and Revit version"
-
-    for p in xml_paths:
-        errors += "\n" + xml_add_material_library(name, path, p, destination)
-
-    return errors.strip()

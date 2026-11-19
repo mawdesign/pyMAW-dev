@@ -2,38 +2,23 @@
 """Materials From Colour List."""
 
 # # -------------- Standard Library Imports --------------
-# import os
-# import sys
-# import wpf
 import re
 import traceback
-import clr
-
-# # -------------------- .NET Imports --------------------
-# clr.AddReference("System.Drawing")
-# clr.AddReference("PresentationFramework")
-# clr.AddReference("PresentationCore")
-# clr.AddReference("WindowsBase")
-clr.AddReference("Microsoft.Office.Interop.Excel")
-from Microsoft.Office.Interop import Excel
 
 # # ------------------ pyRevit Imports -------------------
-from pyrevit import forms  # , script
+from pyrevit import forms
 from pyrevit import revit
-from pyrevit import DB  # , UI
+
+# # ------------------- module imports -------------------
+import revitcolour
+import revitexcel
+import revitforms
+import revitmaterials
 
 
 # ----------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------
-
-doc = revit.doc
-
-
-class MaterialOption(forms.TemplateListItem):
-    @property
-    def name(self):
-        return self.item.Name
 
 
 def sanitise_material_name(text, space_replacement=None, ignore_tokens=None):
@@ -70,7 +55,7 @@ def sanitise_material_name(text, space_replacement=None, ignore_tokens=None):
     )
 
     # This regex replaces characters that aren't letters, numbers, hyphens, underscores, brackets, or periods
-    re.sub(r"[^\w\s\-\.\(\)]", "_", working)
+    working = re.sub(r"[^\w\s\-\.\(\)]", "_", working)
 
     # Space replacement
     working = re.sub(r"\s+", space_replacement, working)
@@ -99,126 +84,36 @@ def sanitise_material_name(text, space_replacement=None, ignore_tokens=None):
     return working
 
 
-def get_materials():
-    return sorted(
-        DB.FilteredElementCollector(doc).OfClass(DB.Material).ToElements(),
-        key=lambda x: x.Name,
-    )
-
-
-def read_sheet_names(path):
-    app = Excel.ApplicationClass()
-    app.Visible = False
-
-    wb = app.Workbooks.Open(path)
-
-    names = []
-
+def to_number(text):
+    """Cell text -> int/float, or None if blank or not numeric."""
     try:
-        for sheet in wb.Worksheets:
-            names.append(sheet.Name)
-    finally:
-        wb.Close(False)
-        app.Quit()
-
-    return names
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    return int(value) if value.is_integer() else value
 
 
-def load_colour_rows(path, sheet_name):
-
-    app = Excel.ApplicationClass()
-    app.Visible = False
-
-    wb = app.Workbooks.Open(path)
-    ws = wb.Worksheets[sheet_name]
+def load_colour_rows(sheet):
+    """Returns [{"name", "r", "g", "b", "lrv"}, ...] from a revitexcel sheet."""
+    required = ["colour name", "r", "g", "b"]
+    if not all(h in sheet["headers"] for h in required):
+        raise Exception("Worksheet must contain columns: Colour Name, R, G, B")
 
     colours = []
-
-    try:
-        used = ws.UsedRange
-
-        header_map = {}
-
-        for col in range(1, used.Columns.Count + 1):
-            value = used.Cells(1, col).Value2
-
-            if value:
-                header_map[str(value).strip().lower()] = col
-
-        name_col = header_map.get("colour name")
-        r_col = header_map.get("r")
-        g_col = header_map.get("g")
-        b_col = header_map.get("b")
-        lrv_col = header_map.get("lrv")
-
-        if not all([name_col, r_col, g_col, b_col]):
-            raise Exception("Worksheet must contain columns: Colour Name, R, G, B")
-
-        for row in range(2, used.Rows.Count + 1):
-            colour_name = ws.Cells(row, name_col).Value2
-            if not colour_name:
-                continue
-
-            colour_lrv = int(ws.Cells(row, lrv_col).Value2) if lrv_col else None
-
-            colours.append(
-                {
-                    "name": str(colour_name).strip(),
-                    "r": int(ws.Cells(row, r_col).Value2),
-                    "g": int(ws.Cells(row, g_col).Value2),
-                    "b": int(ws.Cells(row, b_col).Value2),
-                    "lrv": colour_lrv,
-                }
-            )
-
-    finally:
-        wb.Close(False)
-        app.Quit()
+    for row in sheet["rows"]:
+        if not row.get("colour name"):
+            continue
+        colours.append(
+            {
+                "name": row["colour name"],
+                "r": int(float(row["r"])),
+                "g": int(float(row["g"])),
+                "b": int(float(row["b"])),
+                "lrv": to_number(row.get("lrv")),
+            }
+        )
 
     return colours
-
-
-def duplicate_appearance_asset(material, asset_name):
-
-    asset_id = material.AppearanceAssetId
-
-    if asset_id == DB.ElementId.InvalidElementId:
-        return None
-
-    asset_elem = doc.GetElement(asset_id)
-
-    try:
-        new_asset = asset_elem.Duplicate(asset_name)
-        return new_asset
-    except:
-        return None
-
-
-def set_asset_colour(asset_id, revit_colour):
-    if not asset_id:
-        return
-
-    edit_scope = DB.Visual.AppearanceAssetEditScope(doc)
-
-    try:
-        asset = edit_scope.Start(asset_id)
-
-        try:
-            prop = asset.FindByName(DB.Visual.Generic.GenericDiffuse)
-            if prop:
-                prop.SetValueAsColor(revit_colour)
-
-        except Exception as e:
-            print(str(e))
-
-        edit_scope.Commit(True)
-
-    except Exception as e:
-        print(str(e))
-        try:
-            edit_scope.Cancel()
-        except:
-            pass
 
 
 def build_name(pattern, material_name, colour_name, lrv_val, parent_name=None):
@@ -240,13 +135,11 @@ def build_name(pattern, material_name, colour_name, lrv_val, parent_name=None):
 
 def materials_from_colour_list():
 
-    materials = get_materials()
+    doc = revit.doc
+    materials = revitmaterials.get_materials(doc)
 
-    selected_materials = forms.SelectFromList.show(
-        [MaterialOption(x) for x in materials],
-        multiselect=True,
-        title="Select Template Materials",
-        button_name="Continue",
+    selected_materials = revitforms.select_materials(
+        materials, title="Select Template Materials"
     )
 
     if not selected_materials:
@@ -257,9 +150,9 @@ def materials_from_colour_list():
     if not excel_path:
         return
 
-    sheets = read_sheet_names(excel_path)
+    workbook = revitexcel.read_workbook(excel_path)
 
-    sheet_name = forms.SelectFromList.show(sheets, title="Select Worksheet")
+    sheet_name = forms.SelectFromList.show(sorted(workbook), title="Select Worksheet")
 
     if not sheet_name:
         return
@@ -275,12 +168,12 @@ def materials_from_colour_list():
         ),
         title="Material Name Pattern",
     )
+    if not material_pattern:
+        return
+
     material_pattern = sanitise_material_name(
         material_pattern, ignore_tokens=["{material}", "{colour}", "{lrv}"]
     )
-
-    if not material_pattern:
-        return
 
     asset_pattern = forms.ask_for_string(
         default="{material}_{colour}",
@@ -294,15 +187,15 @@ def materials_from_colour_list():
         ),
         title="Asset Name Pattern",
     )
+    if not asset_pattern:
+        return
+
     asset_pattern = sanitise_material_name(
         asset_pattern,
         ignore_tokens=["{material}", "{colour}", "{lrv}", "{new_mat_name}"],
     )
 
-    if not asset_pattern:
-        return
-
-    colours = load_colour_rows(excel_path, sheet_name)
+    colours = load_colour_rows(workbook[sheet_name])
 
     existing_names = set(x.Name for x in materials)
 
@@ -323,6 +216,7 @@ def materials_from_colour_list():
                     lrv_val = colour_data["lrv"]
 
                     rgb = (colour_data["r"], colour_data["g"], colour_data["b"])
+                    revit_colour = revitcolour.rgb_to_colour(rgb)
 
                     new_material_name = build_name(
                         material_pattern,
@@ -338,28 +232,8 @@ def materials_from_colour_list():
                     try:
                         new_mat = template.Duplicate(new_material_name)
 
-                        revit_colour = DB.Color(rgb[0], rgb[1], rgb[2])
-
                         new_mat.UseRenderAppearanceForShading = False
                         new_mat.Color = revit_colour
-
-                        # try:
-                        # new_mat.SurfaceForegroundPatternColor = revit_colour
-                        # except:
-                        # print("Forground colour not set")
-                        # pass
-
-                        # try:
-                        # new_mat.CutForegroundPatternColor = revit_colour
-                        # except:
-                        # print("Background colour not set")
-                        # pass
-
-                        # try:
-                        # new_mat.UseRenderAppearanceForShading = True
-                        # except:
-                        # print("Render appearance not set")
-                        # pass
 
                         asset_name = build_name(
                             asset_pattern,
@@ -369,11 +243,15 @@ def materials_from_colour_list():
                             parent_name=new_material_name,
                         )
 
-                        new_asset = duplicate_appearance_asset(new_mat, asset_name)
+                        new_asset = revitmaterials.duplicate_appearance_asset(
+                            doc, new_mat, asset_name
+                        )
 
                         if new_asset:
                             new_mat.AppearanceAssetId = new_asset.Id
-                            set_asset_colour(new_asset.Id, revit_colour)
+                            revitmaterials.set_asset_colour(
+                                doc, new_asset.Id, revit_colour
+                            )
 
                         existing_names.add(new_material_name)
 
@@ -385,7 +263,7 @@ def materials_from_colour_list():
                         print(traceback.format_exc())
 
     forms.alert(
-        "Material generation complete.\n{}\\{} materials made.".format(
+        "Material generation complete.\n{} of {} materials made.".format(
             count_success, count
         ),
         title="Materials From Colour List",

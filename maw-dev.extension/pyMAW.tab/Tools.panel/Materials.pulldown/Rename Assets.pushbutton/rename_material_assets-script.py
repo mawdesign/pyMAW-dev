@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Rename Material Assets."""
 
+# IronPython 2.7 needs this for \uXXXX escapes; ruff format strips u"" prefixes.
+from __future__ import unicode_literals
+
 # # -------------- Standard Library Imports --------------
 import traceback
 import re
@@ -392,7 +395,7 @@ def rename_material_assets():
 
     rows = ObservableCollection[MaterialAssetRow]()
 
-    for name, data in sorted(material_assets.items()):
+    for _name, data in sorted(material_assets.items()):
         rows.Add(MaterialAssetRow(data))
 
     window = MaterialAssetWindow("rename_assets_form.xaml", rows)

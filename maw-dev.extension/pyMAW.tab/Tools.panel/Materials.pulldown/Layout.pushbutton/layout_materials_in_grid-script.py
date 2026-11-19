@@ -2,35 +2,24 @@
 """Places a 3D grid of swatch families with assigned materials and 3D model text labels."""
 
 # # -------------- Standard Library Imports --------------
-# import clr
-# import os
-# import re
-# import sys
 import traceback
-# import wpf
-
-# # -------------------- .NET Imports --------------------
-# clr.AddReference("System.Drawing")
-# clr.AddReference("PresentationFramework")
-# clr.AddReference("PresentationCore")
-# clr.AddReference("WindowsBase")
 
 # # ------------------ pyRevit Imports -------------------
-from pyrevit import forms  # script,
+from pyrevit import forms, script
 from pyrevit import revit
 from pyrevit import DB, UI
 from rpw.ui import forms as rpw_forms
 
+# # ------------------- module imports -------------------
+import revitforms
+import revitmaterials
+
 doc = revit.doc
 
-# --- CONFIGURATION ---
-FT_PER_MM = 0.00328084
 
-
-class MaterialOption(forms.TemplateListItem):
-    @property
-    def name(self):
-        return self.Name
+def mm_to_internal(value):
+    """Millimetres to Revit internal units (feet)."""
+    return DB.UnitUtils.ConvertToInternalUnits(value, DB.UnitTypeId.Millimeters)
 
 
 def get_swatch_symbol(document):
@@ -42,13 +31,20 @@ def get_swatch_symbol(document):
         .ToElements()
     )
 
-    fam_name = (
-        forms.SelectFromList.show(
-            [sym.FamilyName for sym in symbols], title="Select Swatch Family"
+    if not symbols:
+        forms.alert(
+            "No Generic Model families are loaded in the project.", exitscript=True
         )
-        if len(symbols) > 1
-        else symbols[0].FamilyName
-    )
+
+    if len(symbols) > 1:
+        fam_name = forms.SelectFromList.show(
+            sorted(set(sym.FamilyName for sym in symbols)),
+            title="Select Swatch Family",
+        )
+        if not fam_name:
+            script.exit()
+    else:
+        fam_name = symbols[0].FamilyName
 
     for sym in symbols:
         if sym.FamilyName == fam_name:
@@ -60,28 +56,21 @@ def get_swatch_symbol(document):
 
 
 def layout_materials_in_grid():
-    # 1. Collect and sort all materials
-    materials = list(DB.FilteredElementCollector(doc).OfClass(DB.Material))
-    materials.sort(key=lambda m: m.Name.lower())
+    materials = revitmaterials.get_materials(doc)
 
     if not materials:
         forms.alert("No materials found in the project.", exitscript=True)
 
-    selected_materials = forms.SelectFromList.show(
-        [MaterialOption(x) for x in materials],
-        multiselect=True,
-        title="Select Materials",
-        button_name="Continue",
-    )
+    selected_materials = revitforms.select_materials(materials)
 
     if not selected_materials:
-        forms.alert(
+        update_existing = forms.alert(
             "No materials selected.\n\nDo you want to update current swatches?",
-            ok=False,
             yes=True,
             no=True,
-            exitscript=True,
         )
+        if not update_existing:
+            script.exit()
 
     swatch_symbol = get_swatch_symbol(doc)
     if not swatch_symbol:
@@ -92,10 +81,7 @@ def layout_materials_in_grid():
     swatch_text_params = []
     swatch_mat_params = []
     for param in family_mgr.Parameters:
-        if (
-            param.Definition.GetDataType() == DB.SpecTypeId.Reference.Material
-            and not param.IsReadOnly
-        ):
+        if revitmaterials.is_material_parameter(param) and not param.IsReadOnly:
             swatch_mat_params.append(param.Definition.Name)
         if param.StorageType == DB.StorageType.String and not param.IsReadOnly:
             swatch_text_params.append(param.Definition.Name)
@@ -122,6 +108,9 @@ def layout_materials_in_grid():
     form = rpw_forms.FlexForm("Swatch Layout Parameters", components)
     form.show()
 
+    if not form.values:
+        script.exit()
+
     if form.values:
         material_param = form.values["mat_param"]
         material_name_param = form.values["mat_label"]
@@ -129,8 +118,8 @@ def layout_materials_in_grid():
         if selected_materials:
             try:
                 # Convert the string inputs from TextBox into numbers
-                col_spacing = float(form.values["col_space"]) * FT_PER_MM
-                row_spacing = float(form.values["row_space"]) * FT_PER_MM
+                col_spacing = mm_to_internal(float(form.values["col_space"]))
+                row_spacing = mm_to_internal(float(form.values["row_space"]))
                 max_cols = int(form.values["cols"])
 
             except ValueError:
@@ -168,36 +157,35 @@ def layout_materials_in_grid():
 
             forms.alert("Placed {} 3D material swatches.".format(placed_count))
     else:
-        with revit.Transaction("Update 3D Material Swatches"):
-            updated_count = 0
-
-            class SwatchSelectionFilter(UI.Selection.ISelectionFilter):
-                def AllowElement(self, element):
-                    try:
-                        return (
-                            isinstance(element, DB.FamilyInstance)
-                            and element.Symbol.Family.Id == swatch_symbol.Family.Id
-                        )
-                    except Exception:
-                        return False
-
-                def AllowReference(self, reference, point):
+        class SwatchSelectionFilter(UI.Selection.ISelectionFilter):
+            def AllowElement(self, element):
+                try:
+                    return (
+                        isinstance(element, DB.FamilyInstance)
+                        and element.Symbol.Family.Id == swatch_symbol.Family.Id
+                    )
+                except Exception:
                     return False
 
-            try:
-                refs = revit.uidoc.Selection.PickObjects(
-                    UI.Selection.ObjectType.Element,
-                    SwatchSelectionFilter(),
-                    "Select swatches to update",
-                )
-                selected_instances = [revit.doc.GetElement(r) for r in refs]
-            except Exception:
-                # Handles user pressing Esc to cancel
-                selected_instances = []
+            def AllowReference(self, reference, point):
+                return False
 
-            if not selected_instances:
-                forms.alert("No swatches selected.", exitscript=True)
+        try:
+            refs = revit.uidoc.Selection.PickObjects(
+                UI.Selection.ObjectType.Element,
+                SwatchSelectionFilter(),
+                "Select swatches to update",
+            )
+            selected_instances = [revit.doc.GetElement(r) for r in refs]
+        except Exception:
+            # Handles user pressing Esc to cancel
+            selected_instances = []
 
+        if not selected_instances:
+            forms.alert("No swatches selected.", exitscript=True)
+
+        updated_count = 0
+        with revit.Transaction("Update 3D Material Swatches"):
             for instance in selected_instances:
                 mat_param = instance.LookupParameter(material_param)
                 name_param = instance.LookupParameter(material_name_param)

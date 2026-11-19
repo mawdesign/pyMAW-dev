@@ -1,3 +1,5 @@
 title: Layout Material Swatches
 tooltip: Lays out material swatches in a grid
-author: MAW
+author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021
+context: doc-project

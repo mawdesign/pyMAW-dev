@@ -1,3 +1,6 @@
+# IronPython 2.7 needs this for \uXXXX escapes; ruff format strips u"" prefixes.
+from __future__ import unicode_literals
+
 from pyrevit import revit
 from pyrevit import forms, script
 

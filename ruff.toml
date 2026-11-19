@@ -1,3 +1,12 @@
+# pyRevit scripts run on IronPython 2.7 (and CPython 3 on Revit 2025+), but ruff
+# cannot target py27, so py37 is the closest setting. Keep the code 2.7-safe:
+#
+# * "\uXXXX" escapes only work in IronPython 2.7 for unicode strings. `ruff format`
+#   strips u"" prefixes, so put `from __future__ import unicode_literals` at the top of
+#   any file that uses \u escapes instead of relying on u"" prefixes.
+# * Do not use f-strings, `nonlocal`, `:=` or annotations in pyRevit scripts.
+# * Do not enable the "UP" (pyupgrade) rules: they remove u"" prefixes and
+#   `__future__` imports, which IronPython 2.7 needs.
 target-version = "py37"
 line-length = 88
 extend-exclude = ["**/pyqrcode"]
