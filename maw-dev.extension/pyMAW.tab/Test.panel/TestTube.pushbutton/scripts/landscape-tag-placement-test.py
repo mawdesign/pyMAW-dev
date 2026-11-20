@@ -12,6 +12,8 @@ import traceback
 from pyrevit import revit, DB, forms, script
 from pyrevit.compat import get_elementid_value_func
 
+from Autodesk.Revit.Exceptions import OperationCanceledException
+
 output = script.get_output()
 get_id_value = get_elementid_value_func()
 
@@ -43,6 +45,8 @@ def main():
 
     try:
         revit.uidoc.PromptForFamilyInstancePlacement(tag_type)
+    except OperationCanceledException:
+        output.print_md("Placement finished.")
     except Exception:
         output.print_md("**PromptForFamilyInstancePlacement failed:**")
         output.print_code(traceback.format_exc())
