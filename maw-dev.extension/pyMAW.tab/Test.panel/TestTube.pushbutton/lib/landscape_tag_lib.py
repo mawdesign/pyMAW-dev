@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Shared helpers for the landscape-tag and landscape-tag-update scripts.
 
-Space Tags carry the element Id of their planting schedule in the instance
-parameter named by TAG_SCHEDULE_PARAM (text or integer).
+Planting schedules carry the element Id of their Space Tag in the instance
+parameter named by SCHEDULE_TAG_PARAM (text or integer).
 """
 
 # # -------------- Standard Library Imports --------------
@@ -19,7 +19,7 @@ CONFIG_SECTION = "landscape_tag"
 CONFIG_KEY = "space_parameter"
 TEMPLATE_PREFIX = "_TEMPLATE"
 SCHEDULE_NAME = "MASS PLANTING - {}"
-TAG_SCHEDULE_PARAM = "Schedule Id"
+SCHEDULE_TAG_PARAM = "Tag Id"
 SCHEDULE_GAP_X_FT = 0 / 304.8
 SCHEDULE_GAP_Y_FT = -30 / 304.8
 INVALID_NAME_CHARS = re.compile(r"[\\:{}\[\]|;<>?`~]")
@@ -132,8 +132,8 @@ def get_or_create_schedule(template, parameter_name, value, view):
     return schedule
 
 
-def get_tag_schedule_id(tag):
-    parameter = tag.LookupParameter(TAG_SCHEDULE_PARAM)
+def get_schedule_tag(schedule):
+    parameter = schedule.LookupParameter(SCHEDULE_TAG_PARAM)
     if not parameter or not parameter.HasValue:
         return None
     if parameter.StorageType == DB.StorageType.Integer:
@@ -143,14 +143,15 @@ def get_tag_schedule_id(tag):
         if not text.isdigit():
             return None
         value = int(text)
-    return DB.ElementId(value) if value > 0 else None
+    tag = revit.doc.GetElement(DB.ElementId(value)) if value > 0 else None
+    return tag if isinstance(tag, DB.Mechanical.SpaceTag) else None
 
 
-def set_tag_schedule_id(tag, schedule):
-    parameter = tag.LookupParameter(TAG_SCHEDULE_PARAM)
+def set_schedule_tag(schedule, tag):
+    parameter = schedule.LookupParameter(SCHEDULE_TAG_PARAM)
     if not parameter or parameter.IsReadOnly:
         return False
-    value = get_id_value(schedule.Id)
+    value = get_id_value(tag.Id)
     if parameter.StorageType == DB.StorageType.Integer:
         return parameter.Set(value)
     return parameter.Set(str(value))

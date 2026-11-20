@@ -2,9 +2,8 @@
 """Moves planting schedules to sit below their Space Tags on the current sheet.
 
 Run from a sheet (all plan views on it) or from a plan view that is on a
-sheet. Each tag's schedule Id parameter identifies its schedule. Where several
-tags share a schedule, the first tag found is used. Schedules not yet on the
-sheet are placed.
+sheet. Each schedule on the sheet holds the element Id of its Space Tag in a
+parameter and is moved to sit below that tag.
 """
 
 # # -------------- Standard Library Imports --------------
@@ -31,37 +30,27 @@ def get_sheet_and_viewports():
     return None, []
 
 
-def collect_targets(viewports):
-    targets = {}
-    for viewport in viewports:
-        view = revit.doc.GetElement(viewport.ViewId)
-        if not isinstance(view, DB.ViewPlan):
+def collect_targets(sheet, viewports):
+    viewport_by_view = dict((vp.ViewId, vp) for vp in viewports)
+    targets = []
+    for instance in DB.FilteredElementCollector(revit.doc).OfClass(
+        DB.ScheduleSheetInstance
+    ):
+        if instance.OwnerViewId != sheet.Id:
             continue
-        for tag in lib.get_space_tags(view):
-            schedule_id = lib.get_tag_schedule_id(tag)
-            if not schedule_id or schedule_id in targets:
-                continue
-            schedule = revit.doc.GetElement(schedule_id)
-            if isinstance(schedule, DB.ViewSchedule):
-                targets[schedule_id] = (schedule, tag, view, viewport)
+        tag = lib.get_schedule_tag(revit.doc.GetElement(instance.ScheduleId))
+        viewport = viewport_by_view.get(tag.OwnerViewId) if tag else None
+        if viewport:
+            view = revit.doc.GetElement(tag.OwnerViewId)
+            targets.append((instance, tag, view, viewport))
     return targets
 
 
-def apply_targets(targets, sheet):
-    moved = placed = 0
+def apply_targets(targets):
     with revit.Transaction("Planting Tag: Update schedule positions"):
-        for schedule, tag, view, viewport in targets.values():
-            point = lib.schedule_point_for_tag(tag, view, viewport)
-            instance = lib.find_schedule_instance(schedule, sheet)
-            if instance:
-                instance.Point = point
-                moved += 1
-            else:
-                DB.ScheduleSheetInstance.Create(
-                    revit.doc, sheet.Id, schedule.Id, point
-                )
-                placed += 1
-    return moved, placed
+        for instance, tag, view, viewport in targets:
+            instance.Point = lib.schedule_point_for_tag(tag, view, viewport)
+    return len(targets)
 
 
 def main():
@@ -72,14 +61,15 @@ def main():
             exitscript=True,
         )
     try:
-        targets = collect_targets(viewports)
+        targets = collect_targets(sheet, viewports)
         if not targets:
             forms.alert(
-                "No tags with a '{}' value found.".format(lib.TAG_SCHEDULE_PARAM),
+                "No schedules on this sheet have a '{}' value.".format(
+                    lib.SCHEDULE_TAG_PARAM
+                ),
                 exitscript=True,
             )
-        moved, placed = apply_targets(targets, sheet)
-        output.print_md("Moved {} schedule(s), placed {}.".format(moved, placed))
+        output.print_md("Moved {} schedule(s).".format(apply_targets(targets)))
     except Exception:
         logger.error(traceback.format_exc())
 

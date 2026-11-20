@@ -4,7 +4,7 @@
 Place Space Tags as you would normally (multiple spaces, Esc to finish). For
 each bed value a copy of the template schedule (name starts with '_TEMPLATE')
 is filtered to that value and placed on the sheet just below the tag. The
-schedule's element Id is stored on each tag so landscape-tag-update can move
+tag's element Id is stored on the schedule so landscape-tag-update can move
 the schedules after the tags are rearranged.
 
 Shift-click to choose a different Space parameter.
@@ -57,11 +57,11 @@ def group_tags_by_value(tags, parameter_name):
 
 def process_group(value, tags, template, parameter_name, view, viewport):
     schedule = lib.get_or_create_schedule(template, parameter_name, value, view)
-    with revit.Transaction("Planting Tag: Link tags to schedule"):
-        for tag in tags:
-            if not lib.set_tag_schedule_id(tag, schedule):
+    if not lib.get_schedule_tag(schedule):
+        with revit.Transaction("Planting Tag: Link schedule to tag"):
+            if not lib.set_schedule_tag(schedule, tags[0]):
                 logger.warning(
-                    "Could not write '{}' on a tag.".format(lib.TAG_SCHEDULE_PARAM)
+                    "Could not write '{}' on schedule.".format(lib.SCHEDULE_TAG_PARAM)
                 )
     if not viewport:
         return
