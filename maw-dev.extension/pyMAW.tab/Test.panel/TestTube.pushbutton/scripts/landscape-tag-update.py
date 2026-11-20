@@ -12,7 +12,10 @@ import traceback
 # # ------------------ pyRevit Imports -------------------
 from pyrevit import revit, DB, forms, script
 
+import landscape_tag_hook as hook
 import landscape_tag_lib as lib
+
+__persistentengine__ = True
 
 logger = script.get_logger()
 output = script.get_output()
@@ -64,6 +67,7 @@ def main():
             "Run this from a sheet or from a plan view placed on a sheet.",
             exitscript=True,
         )
+    hook.register()
     try:
         targets = collect_targets(sheet, viewports)
         if not targets:

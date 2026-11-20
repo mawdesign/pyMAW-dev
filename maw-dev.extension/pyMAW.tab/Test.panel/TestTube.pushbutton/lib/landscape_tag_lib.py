@@ -125,20 +125,19 @@ def build_schedule_name(viewport, space):
 
 
 def get_or_create_schedule(template, parameter_name, value, view, name):
-    with revit.Transaction("Planting Tag: Create planting schedule"):
-        schedule = find_schedule_by_name(name)
-        if not schedule:
-            new_id = template.Duplicate(DB.ViewDuplicateOption.Duplicate)
-            schedule = revit.doc.GetElement(new_id)
-            schedule.Name = name
-        field = find_space_field(schedule.Definition, parameter_name)
-        if not field:
-            forms.alert(
-                "Template has no Space field for '{}'.".format(parameter_name),
-                exitscript=True,
-            )
-        set_equal_filter(schedule.Definition, field, value)
-        match_view_phase(schedule, view)
+    schedule = find_schedule_by_name(name)
+    if not schedule:
+        new_id = template.Duplicate(DB.ViewDuplicateOption.Duplicate)
+        schedule = revit.doc.GetElement(new_id)
+        schedule.Name = name
+    field = find_space_field(schedule.Definition, parameter_name)
+    if not field:
+        forms.alert(
+            "Template has no Space field for '{}'.".format(parameter_name),
+            exitscript=True,
+        )
+    set_equal_filter(schedule.Definition, field, value)
+    match_view_phase(schedule, view)
     return schedule
 
 

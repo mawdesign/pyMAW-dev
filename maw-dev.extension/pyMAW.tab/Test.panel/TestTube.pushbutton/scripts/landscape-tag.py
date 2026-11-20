@@ -21,7 +21,10 @@ from pyrevit import revit, DB, forms, script
 # # ----------------- Autodesk Imports -------------------
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
+import landscape_tag_hook as hook
 import landscape_tag_lib as lib
+
+__persistentengine__ = True
 
 logger = script.get_logger()
 
@@ -59,19 +62,19 @@ def group_tags_by_value(tags, parameter_name):
 
 def process_group(value, tags, template, parameter_name, view, viewport):
     name = lib.build_schedule_name(viewport, tags[0].Space)
-    schedule = lib.get_or_create_schedule(template, parameter_name, value, view, name)
-    if not lib.get_schedule_tag(schedule):
-        with revit.Transaction("Planting Tag: Link schedule to tag"):
+    sheet = revit.doc.GetElement(viewport.SheetId)
+    point = lib.schedule_point_for_tag(tags[0], view, viewport)
+    with revit.Transaction("Planting Tag: Create planting schedule"):
+        schedule = lib.get_or_create_schedule(
+            template, parameter_name, value, view, name
+        )
+        if not lib.get_schedule_tag(schedule):
             if not lib.set_schedule_tag(schedule, tags[0]):
                 logger.warning(
                     "Could not write '{}' on schedule.".format(lib.SCHEDULE_TAG_PARAM)
                 )
-    sheet = revit.doc.GetElement(viewport.SheetId)
-    if lib.find_schedule_instance(schedule, sheet):
-        return
-    point = lib.schedule_point_for_tag(tags[0], view, viewport)
-    with revit.Transaction("Planting Tag: Place planting schedule"):
-        DB.ScheduleSheetInstance.Create(revit.doc, sheet.Id, schedule.Id, point)
+        if not lib.find_schedule_instance(schedule, sheet):
+            DB.ScheduleSheetInstance.Create(revit.doc, sheet.Id, schedule.Id, point)
 
 
 def main():
@@ -91,6 +94,7 @@ def main():
         forms.alert("No default Space Tag type found.", exitscript=True)
 
     template = lib.choose_template()
+    hook.register()
     config = script.get_config(lib.CONFIG_SECTION)
 
     try:
