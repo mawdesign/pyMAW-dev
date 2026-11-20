@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """Tags a planting bed Space and places a filtered planting schedule below it.
 
-Pick a Space, then click a tag position and a leader end for each Space Tag
-to create. Press Esc to finish. A copy of the template schedule (name starts
-with '_TEMPLATE') is filtered to the Space parameter value and placed on the
-sheet just below the first tag.
+Pick a Space, then click the tag position. The leader ends at the Space's
+location point. Repeat for each bed and press Esc to finish. A copy of the
+template schedule (name starts with '_TEMPLATE') is filtered to the Space
+parameter value and placed on the sheet just below the tag.
 
 Shift-click to choose a different Space parameter.
 """
@@ -26,8 +26,9 @@ output = script.get_output()
 CONFIG_SECTION = "landscape_tag"
 CONFIG_KEY = "space_parameter"
 TEMPLATE_PREFIX = "_TEMPLATE"
-SCHEDULE_NAME = "Planting - {}"
-SCHEDULE_GAP_FT = 10.0 / 304.8
+SCHEDULE_NAME = "MASS PLANTING - {}"
+SCHEDULE_GAP_X_FT = 0 / 304.8
+SCHEDULE_GAP_Y_FT = -30 / 304.8
 INVALID_NAME_CHARS = re.compile(r"[\\:{}\[\]|;<>?`~]")
 
 
@@ -153,7 +154,7 @@ def match_view_phase(schedule, view):
 def get_or_create_schedule(template, parameter_name, value, view):
     raw_name = SCHEDULE_NAME.format(value)
     name = INVALID_NAME_CHARS.sub("-", raw_name)
-    with revit.Transaction("Create planting schedule"):
+    with revit.Transaction("Planting Tag: Create planting schedule"):
         schedule = find_schedule_by_name(name)
         if not schedule:
             new_id = template.Duplicate(DB.ViewDuplicateOption.Duplicate)
@@ -179,34 +180,25 @@ def get_tag_type_id():
     return type_id
 
 
-def create_space_tag(space, view, head_point, leader_end, type_id):
+def create_space_tag(space, view, head_point, type_id):
     location = space.Location.Point
-    with revit.Transaction("Tag space"):
-        tag = revit.doc.Create.NewSpaceTag(
-            space, DB.UV(location.X, location.Y), view
-        )
+    with revit.Transaction("Planting Tag: Tag space"):
+        tag = revit.doc.Create.NewSpaceTag(space, DB.UV(location.X, location.Y), view)
         if type_id:
             tag.ChangeTypeId(type_id)
         tag.HasLeader = True
         revit.doc.Regenerate()
         tag.TagHeadPosition = head_point
-        tag.LeaderEnd = leader_end
+        tag.LeaderEnd = location
     return tag
 
 
 def tag_space(space, view, uidoc):
-    type_id = get_tag_type_id()
-    head_points = []
-    while True:
-        head_point = pick_point(uidoc, "Click tag position (Esc to finish)")
-        if not head_point:
-            break
-        leader_end = pick_point(uidoc, "Click leader end (Esc to finish)")
-        if not leader_end:
-            break
-        create_space_tag(space, view, head_point, leader_end, type_id)
-        head_points.append(head_point)
-    return head_points
+    head_point = pick_point(uidoc, "Click tag position (Esc to finish)")
+    if not head_point:
+        return None
+    create_space_tag(space, view, head_point, get_tag_type_id())
+    return head_point
 
 
 def find_viewport(view):
@@ -254,39 +246,40 @@ def place_schedule(schedule, view, head_point):
     if is_on_sheet(schedule, sheet):
         return
     sheet_point = model_to_sheet_point(head_point, view, viewport)
-    below = DB.XYZ(sheet_point.X, sheet_point.Y - SCHEDULE_GAP_FT, 0)
-    with revit.Transaction("Place planting schedule"):
+    below = DB.XYZ(sheet_point.X + SCHEDULE_GAP_X_FT, sheet_point.Y - SCHEDULE_GAP_Y_FT, 0)
+    with revit.Transaction("Planting Tag: Place planting schedule"):
         DB.ScheduleSheetInstance.Create(revit.doc, sheet.Id, schedule.Id, below)
 
 
 def main():
     uidoc = revit.uidoc
     view = revit.active_view
+    config = script.get_config(CONFIG_SECTION)
     if not isinstance(view, DB.ViewPlan):
         forms.alert("Run this from a plan view.", exitscript=True)
-
-    space = pick_space(uidoc)
-    if not space:
-        script.exit()
-
-    config = script.get_config(CONFIG_SECTION)
-    parameter_name = get_space_parameter_name(space, config)
-    if not parameter_name:
-        script.exit()
-    value = get_text_value(space.LookupParameter(parameter_name))
-    if not value:
-        forms.alert(
-            "Space has no value for '{}'.".format(parameter_name), exitscript=True
-        )
 
     template = choose_template()
 
     try:
-        head_points = tag_space(space, view, uidoc)
-        if not head_points:
-            return
-        schedule = get_or_create_schedule(template, parameter_name, value, view)
-        place_schedule(schedule, view, head_points[0])
+        while True:
+            space = pick_space(uidoc)
+            if not space:
+                break
+
+            parameter_name = get_space_parameter_name(space, config)
+            if not parameter_name:
+                break
+            value = get_text_value(space.LookupParameter(parameter_name))
+            if not value:
+                forms.alert(
+                    "Space has no value for '{}'.".format(parameter_name), exitscript=True
+                )
+
+            head_point = tag_space(space, view, uidoc)
+            if not head_point:
+                break
+            schedule = get_or_create_schedule(template, parameter_name, value, view)
+            place_schedule(schedule, view, head_point)
     except Exception:
         logger.error(traceback.format_exc())
 
