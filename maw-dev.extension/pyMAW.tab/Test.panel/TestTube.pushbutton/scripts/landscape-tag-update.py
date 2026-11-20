@@ -47,9 +47,13 @@ def collect_targets(sheet, viewports):
 
 
 def apply_targets(targets):
+    points = [
+        lib.schedule_point_for_tag(tag, view, viewport)
+        for _, tag, view, viewport in targets
+    ]
     with revit.Transaction("Planting Tag: Update schedule positions"):
-        for instance, tag, view, viewport in targets:
-            instance.Point = lib.schedule_point_for_tag(tag, view, viewport)
+        for (instance, _, _, _), point in zip(targets, points):
+            instance.Point = point
     return len(targets)
 
 

@@ -3,7 +3,9 @@
 
 Place Space Tags as you would normally (multiple spaces, Esc to finish). For
 each bed value a copy of the template schedule (name starts with '_TEMPLATE')
-is filtered to that value and placed on the sheet just below the tag. The
+is filtered to that value, named by detail number, sheet number and space
+number, and placed on the sheet just below the tag. The view must be on a
+sheet, so the same bed can be tagged on several sheets or views. The
 tag's element Id is stored on the schedule so landscape-tag-update can move
 the schedules after the tags are rearranged.
 
@@ -56,15 +58,14 @@ def group_tags_by_value(tags, parameter_name):
 
 
 def process_group(value, tags, template, parameter_name, view, viewport):
-    schedule = lib.get_or_create_schedule(template, parameter_name, value, view)
+    name = lib.build_schedule_name(viewport, tags[0].Space)
+    schedule = lib.get_or_create_schedule(template, parameter_name, value, view, name)
     if not lib.get_schedule_tag(schedule):
         with revit.Transaction("Planting Tag: Link schedule to tag"):
             if not lib.set_schedule_tag(schedule, tags[0]):
                 logger.warning(
                     "Could not write '{}' on schedule.".format(lib.SCHEDULE_TAG_PARAM)
                 )
-    if not viewport:
-        return
     sheet = revit.doc.GetElement(viewport.SheetId)
     if lib.find_schedule_instance(schedule, sheet):
         return
@@ -77,6 +78,13 @@ def main():
     view = revit.active_view
     if not isinstance(view, DB.ViewPlan):
         forms.alert("Run this from a plan view.", exitscript=True)
+
+    viewport = lib.find_viewport(view)
+    if not viewport:
+        forms.alert(
+            "This view is not placed on a sheet. Place it on a sheet before tagging.",
+            exitscript=True,
+        )
 
     tag_type = get_default_tag_type()
     if not tag_type:
@@ -92,9 +100,6 @@ def main():
         parameter_name = lib.get_space_parameter_name(tags[0].Space, config)
         if not parameter_name:
             return
-        viewport = lib.find_viewport(view)
-        if not viewport:
-            forms.alert("View is not on a sheet. Schedules will not be placed.")
         groups = group_tags_by_value(tags, parameter_name)
         for value, group in groups.items():
             process_group(value, group, template, parameter_name, view, viewport)

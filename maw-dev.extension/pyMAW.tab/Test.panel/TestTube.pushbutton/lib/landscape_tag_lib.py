@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Shared helpers for the landscape-tag and landscape-tag-update scripts.
 
-Planting schedules carry the element Id of their Space Tag in the instance
+Each planting schedule carries the element Id of its Space Tag in the instance
 parameter named by SCHEDULE_TAG_PARAM (text or integer).
 """
 
@@ -18,7 +18,7 @@ get_id_value = get_elementid_value_func()
 CONFIG_SECTION = "landscape_tag"
 CONFIG_KEY = "space_parameter"
 TEMPLATE_PREFIX = "_TEMPLATE"
-SCHEDULE_NAME = "MASS PLANTING - {}"
+SCHEDULE_NAME = "MASS PLANTING - {detail}/{sheet} - {space}"
 SCHEDULE_TAG_PARAM = "Tag Id"
 SCHEDULE_GAP_X_FT = 0 / 304.8
 SCHEDULE_GAP_Y_FT = -30 / 304.8
@@ -113,8 +113,18 @@ def match_view_phase(schedule, view):
     schedule_phase.Set(view_phase.AsElementId())
 
 
-def get_or_create_schedule(template, parameter_name, value, view):
-    name = INVALID_NAME_CHARS.sub("-", SCHEDULE_NAME.format(value))
+def build_schedule_name(viewport, space):
+    detail = viewport.get_Parameter(DB.BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
+    sheet = revit.doc.GetElement(viewport.SheetId)
+    name = SCHEDULE_NAME.format(
+        detail=detail.AsString() if detail else "",
+        sheet=sheet.SheetNumber,
+        space=space.Number,
+    )
+    return INVALID_NAME_CHARS.sub("-", name)
+
+
+def get_or_create_schedule(template, parameter_name, value, view, name):
     with revit.Transaction("Planting Tag: Create planting schedule"):
         schedule = find_schedule_by_name(name)
         if not schedule:
@@ -164,15 +174,24 @@ def find_viewport(view):
     return None
 
 
-def model_to_sheet_point(point, view, viewport):
-    scale = float(view.Scale)
-    sheet_center = viewport.GetBoxCenter()
-    if not view.CropBoxActive:
-        logger.warning("Crop region is off; schedule placed at the view's centre.")
-        return DB.XYZ(sheet_center.X, sheet_center.Y, 0)
+def read_view_frame(view, viewport):
     crop = view.CropBox
-    local = crop.Transform.Inverse.OfPoint(point)
-    crop_center = (crop.Min + crop.Max) / 2.0
+    return viewport.GetBoxCenter(), crop.Transform, (crop.Min + crop.Max) / 2.0
+
+
+def get_view_frame(view, viewport):
+    if view.CropBoxActive:
+        return read_view_frame(view, viewport)
+    with revit.DryTransaction("Planting Tag: Measure view"):
+        view.CropBoxActive = True
+        revit.doc.Regenerate()
+        return read_view_frame(view, viewport)
+
+
+def model_to_sheet_point(point, view, viewport):
+    sheet_center, transform, crop_center = get_view_frame(view, viewport)
+    scale = float(view.Scale)
+    local = transform.Inverse.OfPoint(point)
     return DB.XYZ(
         sheet_center.X + (local.X - crop_center.X) / scale,
         sheet_center.Y + (local.Y - crop_center.Y) / scale,
