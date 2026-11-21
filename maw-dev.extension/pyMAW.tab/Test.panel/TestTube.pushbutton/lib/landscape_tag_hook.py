@@ -7,7 +7,7 @@ Revit startup. The calling script must set __persistentengine__ = True so the
 handlers survive after the script finishes.
 
 Cost control:
-    - The event handler only asks Revit for modified Space Tags (class filter)
+    - The event handler only asks Revit for modified Space Tags (category filter)
       and queues their ids. No document access happens inside the event.
     - Changes made by these scripts (transaction names starting with
       'Planting Tag:') are ignored, so the hook cannot trigger itself.
@@ -43,7 +43,7 @@ class HookState(object):
         self.pending_ids = set()
         self.document = None
         self.failures = 0
-        self.tag_filter = DB.ElementClassFilter(DB.Mechanical.SpaceTag)
+        self.tag_filter = DB.ElementCategoryFilter(DB.BuiltInCategory.OST_MEPSpaceTags)
         self.handler = None
         self.external_event = None
         self.delegate = None
