@@ -94,7 +94,10 @@ def main():
         forms.alert("No default Space Tag type found.", exitscript=True)
 
     template = lib.choose_template()
-    hook.register()
+    try:
+        hook.register()
+    except Exception:
+        print(traceback.format_exc())
     config = script.get_config(lib.CONFIG_SECTION)
 
     try:

@@ -27,7 +27,7 @@ def text_to_pick_point():
     selection = revit.get_selection()
 
     # 2. Filter the selection to only include Text Notes
-    text_notes = [el for el in selection if isinstance(el, DB.TextNote)]
+    text_notes = [el for el in selection if isinstance(el, DB.TextElement)]
 
     # 3. Check if any text notes were selected
     if not text_notes:
