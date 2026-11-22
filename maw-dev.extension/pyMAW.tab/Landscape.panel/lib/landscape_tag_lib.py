@@ -362,7 +362,11 @@ def set_schedule_tag(schedule, tag):
         )
         return False
     if parameter.IsReadOnly:
-        logger.warning("'{}' is read-only.".format(SCHEDULE_TAG_PARAM))
+        logger.warning(
+            "'{}' is read-only (shared: {}, storage: {}).".format(
+                SCHEDULE_TAG_PARAM, parameter.IsShared, parameter.StorageType
+            )
+        )
         return False
     value = get_id_value(tag.Id)
     if parameter.StorageType == DB.StorageType.Integer:
