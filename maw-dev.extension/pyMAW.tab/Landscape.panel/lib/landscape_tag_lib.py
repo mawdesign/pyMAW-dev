@@ -17,11 +17,14 @@ import re
 from pyrevit import revit, DB, forms, script, HOST_APP
 from pyrevit.compat import get_elementid_value_func
 
+from System import Guid
+
 logger = script.get_logger()
 get_id_value = get_elementid_value_func()
 
 PARAMETER_FILE = op.join(op.dirname(__file__), "landscape_tag_parameters.txt")
 SETTINGS_PARAM = "LANDSCAPE_TAG_SETTINGS"
+SETTINGS_GUID = "3b9ef27a-c415-4060-bbfe-c28301f53a23"
 DEFAULT_SETTINGS = {
     "space_parameter": None,
     "template_name": None,
@@ -31,10 +34,15 @@ DEFAULT_SETTINGS = {
 TEMPLATE_PREFIX = "_TEMPLATE"
 SCHEDULE_NAME = "MASS PLANTING - {detail}/{sheet} - {space}"
 SCHEDULE_TAG_PARAM = "LANDSCAPE_TAG_ID"
+SCHEDULE_TAG_GUID = "c62b258e-353f-469f-bb57-6f053712148d"
 MM_PER_FOOT = 304.8
 MOVE_TOLERANCE_FT = 1e-4
 FALLBACK_SPACE_PARAMETER = "Number"
 INVALID_NAME_CHARS = re.compile(r"[\\:{}\[\]|;<>?`~]")
+
+
+def find_parameter(element, name, guid):
+    return element.get_Parameter(Guid(guid)) or element.LookupParameter(name)
 
 
 def get_text_value(parameter):
@@ -88,7 +96,9 @@ def ensure_parameters():
 
 def load_settings():
     settings = dict(DEFAULT_SETTINGS)
-    parameter = revit.doc.ProjectInformation.LookupParameter(SETTINGS_PARAM)
+    parameter = find_parameter(
+        revit.doc.ProjectInformation, SETTINGS_PARAM, SETTINGS_GUID
+    )
     if not parameter or not parameter.HasValue:
         return settings
     try:
@@ -99,7 +109,9 @@ def load_settings():
 
 
 def save_settings(settings):
-    parameter = revit.doc.ProjectInformation.LookupParameter(SETTINGS_PARAM)
+    parameter = find_parameter(
+        revit.doc.ProjectInformation, SETTINGS_PARAM, SETTINGS_GUID
+    )
     if not parameter or parameter.IsReadOnly:
         forms.alert("The {} parameter is not available.".format(SETTINGS_PARAM))
         return False
@@ -325,7 +337,7 @@ def get_or_create_schedule(template, parameter_name, value, view, name):
 
 
 def get_schedule_tag(schedule):
-    parameter = schedule.LookupParameter(SCHEDULE_TAG_PARAM)
+    parameter = find_parameter(schedule, SCHEDULE_TAG_PARAM, SCHEDULE_TAG_GUID)
     if not parameter or not parameter.HasValue:
         return None
     if parameter.StorageType == DB.StorageType.Integer:
@@ -340,8 +352,17 @@ def get_schedule_tag(schedule):
 
 
 def set_schedule_tag(schedule, tag):
-    parameter = schedule.LookupParameter(SCHEDULE_TAG_PARAM)
-    if not parameter or parameter.IsReadOnly:
+    parameter = find_parameter(schedule, SCHEDULE_TAG_PARAM, SCHEDULE_TAG_GUID)
+    if not parameter:
+        logger.warning(
+            "'{}' not found on schedule '{}'. It may be bound to the wrong "
+            "category, or hidden from the API while empty.".format(
+                SCHEDULE_TAG_PARAM, schedule.Name
+            )
+        )
+        return False
+    if parameter.IsReadOnly:
+        logger.warning("'{}' is read-only.".format(SCHEDULE_TAG_PARAM))
         return False
     value = get_id_value(tag.Id)
     if parameter.StorageType == DB.StorageType.Integer:

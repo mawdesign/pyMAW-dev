@@ -70,10 +70,7 @@ def process_group(value, tags, template, parameter_name, view, viewport):
         schedule = lib.get_or_create_schedule(
             template, parameter_name, value, view, name
         )
-        if not lib.set_schedule_tag(schedule, tags[0]):
-            logger.warning(
-                "Could not write '{}' on schedule.".format(lib.SCHEDULE_TAG_PARAM)
-            )
+        lib.set_schedule_tag(schedule, tags[0])
         instance = lib.find_schedule_instance(schedule, sheet)
         if instance:
             instance.Point = point
