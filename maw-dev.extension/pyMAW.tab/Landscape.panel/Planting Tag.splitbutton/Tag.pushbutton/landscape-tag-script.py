@@ -82,6 +82,7 @@ def process_group(value, tags, template, parameter_name, view, viewport):
 
 
 def main():
+    lib.ensure_parameters()
     if script.EXEC_PARAMS.config_mode:
         lib.configure_settings()
         return

@@ -2,21 +2,26 @@
 """Shared helpers for the landscape-tag and landscape-tag-update scripts.
 
 Each planting schedule carries the element Id of its Space Tag in the instance
-parameter named by SCHEDULE_TAG_PARAM (text or integer).
+parameter named by SCHEDULE_TAG_PARAM. Tool settings are stored as one line of
+JSON in the Project Information parameter named by SETTINGS_PARAM. Both
+parameters come from landscape_tag_parameters.txt, which ensure_parameters adds
+to the project if they are missing.
 """
 
 # # -------------- Standard Library Imports --------------
 import json
+import os.path as op
 import re
 
 # # ------------------ pyRevit Imports -------------------
-from pyrevit import revit, DB, forms, script
+from pyrevit import revit, DB, forms, script, HOST_APP
 from pyrevit.compat import get_elementid_value_func
 
 logger = script.get_logger()
 get_id_value = get_elementid_value_func()
 
-SETTINGS_FILE_ID = "landscape_tag_settings"
+PARAMETER_FILE = op.join(op.dirname(__file__), "landscape_tag_parameters.txt")
+SETTINGS_PARAM = "LANDSCAPE_TAG_SETTINGS"
 DEFAULT_SETTINGS = {
     "space_parameter": None,
     "template_name": None,
@@ -25,7 +30,7 @@ DEFAULT_SETTINGS = {
 }
 TEMPLATE_PREFIX = "_TEMPLATE"
 SCHEDULE_NAME = "MASS PLANTING - {detail}/{sheet} - {space}"
-SCHEDULE_TAG_PARAM = "Location_MAW"
+SCHEDULE_TAG_PARAM = "LANDSCAPE_TAG_ID"
 MM_PER_FOOT = 304.8
 MOVE_TOLERANCE_FT = 1e-4
 FALLBACK_SPACE_PARAMETER = "Number"
@@ -36,23 +41,79 @@ def get_text_value(parameter):
     return parameter.AsString() or parameter.AsValueString() or ""
 
 
-def get_settings_path():
-    return script.get_data_file(SETTINGS_FILE_ID, "json", add_cmd_name=False)
+def get_bound_parameter_names():
+    names = set()
+    iterator = revit.doc.ParameterBindings.ForwardIterator()
+    while iterator.MoveNext():
+        names.add(iterator.Key.Name)
+    return names
+
+
+def get_parameter_group():
+    if HOST_APP.is_newer_than(2023):
+        return DB.GroupTypeId.Data
+    return DB.BuiltInParameterGroup.PG_DATA
+
+
+def ensure_parameters():
+    required = [
+        (SETTINGS_PARAM, DB.BuiltInCategory.OST_ProjectInformation),
+        (SCHEDULE_TAG_PARAM, DB.BuiltInCategory.OST_Schedules),
+    ]
+    bound = get_bound_parameter_names()
+    missing = [(name, cat) for name, cat in required if name not in bound]
+    if not missing:
+        return
+    app = HOST_APP.app
+    previous_file = app.SharedParametersFilename
+    app.SharedParametersFilename = PARAMETER_FILE
+    try:
+        definitions = dict(
+            (d.Name, d)
+            for group in app.OpenSharedParameterFile().Groups
+            for d in group.Definitions
+        )
+        with revit.Transaction("Landscape Tag: Add parameters"):
+            for name, built_in_category in missing:
+                categories = app.Create.NewCategorySet()
+                category = revit.doc.Settings.Categories.get_Item(built_in_category)
+                categories.Insert(category)
+                binding = app.Create.NewInstanceBinding(categories)
+                revit.doc.ParameterBindings.Insert(
+                    definitions[name], binding, get_parameter_group()
+                )
+    finally:
+        app.SharedParametersFilename = previous_file
 
 
 def load_settings():
     settings = dict(DEFAULT_SETTINGS)
+    parameter = revit.doc.ProjectInformation.LookupParameter(SETTINGS_PARAM)
+    if not parameter or not parameter.HasValue:
+        return settings
     try:
-        with open(get_settings_path(), "r") as settings_file:
-            settings.update(json.load(settings_file))
-    except (IOError, ValueError):
-        logger.debug("No saved landscape tag settings; using defaults.")
+        settings.update(json.loads(parameter.AsString()))
+    except ValueError:
+        logger.warning("Saved landscape tag settings are invalid; using defaults.")
     return settings
 
 
 def save_settings(settings):
-    with open(get_settings_path(), "w") as settings_file:
-        json.dump(settings, settings_file, indent=2)
+    parameter = revit.doc.ProjectInformation.LookupParameter(SETTINGS_PARAM)
+    if not parameter or parameter.IsReadOnly:
+        forms.alert("The {} parameter is not available.".format(SETTINGS_PARAM))
+        return False
+    text = json.dumps(settings, sort_keys=True, separators=(",", ":"))
+    try:
+        with revit.Transaction("Landscape Tag: Save settings"):
+            parameter.Set(text)
+    except Exception as error:
+        forms.alert(
+            "Could not save settings. Another user may be editing Project "
+            "Information.\n\n{}".format(error)
+        )
+        return False
+    return True
 
 
 def get_space_parameter_names(space):
@@ -81,7 +142,6 @@ def pick_space_parameter(space, settings):
     )
     if selected:
         settings["space_parameter"] = selected
-        save_settings(settings)
     return selected
 
 
@@ -102,7 +162,6 @@ def pick_space_parameter(space, settings):
     )
     if selected:
         settings["space_parameter"] = selected
-        save_settings(settings)
     return selected
 
 
@@ -110,7 +169,10 @@ def get_space_parameter_name(space, settings):
     saved = settings.get("space_parameter")
     if saved and space.LookupParameter(saved):
         return saved
-    return pick_space_parameter(space, settings)
+    selected = pick_space_parameter(space, settings)
+    if selected:
+        save_settings(settings)
+    return selected
 
 
 def find_template_schedules():
@@ -130,7 +192,6 @@ def pick_template(templates, settings):
     if not selected:
         return None
     settings["template_name"] = selected
-    save_settings(settings)
     return by_name[selected]
 
 
@@ -149,6 +210,7 @@ def choose_template(settings):
     template = pick_template(templates, settings)
     if not template:
         script.exit()
+    save_settings(settings)
     return template
 
 
