@@ -66,6 +66,10 @@ def get_parameter_group():
 def ensure_parameters():
     required = [
         (SETTINGS_PARAM, DB.BuiltInCategory.OST_ProjectInformation),
+        # API-QUIRK: the docs say USERMODIFIABLE and HIDEWHENNOVALUE only restrict
+        # UI users, but a Schedules parameter that is not user modifiable or is
+        # hidden when empty is read-only to the API, so LANDSCAPE_TAG_ID must be
+        # user modifiable and visible when empty.
         (SCHEDULE_TAG_PARAM, DB.BuiltInCategory.OST_Schedules),
     ]
     bound = get_bound_parameter_names()
@@ -267,6 +271,23 @@ def configure_settings():
     )
     save_settings(settings)
     return settings
+
+
+def get_schedules_by_name():
+    return dict(
+        (s.Name, s)
+        for s in DB.FilteredElementCollector(revit.doc).OfClass(DB.ViewSchedule)
+    )
+
+
+def find_orphan_schedule(tag, viewport, schedules_by_name):
+    space = tag.Space
+    if not space:
+        return None
+    schedule = schedules_by_name.get(build_schedule_name(viewport, space))
+    if schedule and not get_schedule_tag(schedule):
+        return schedule
+    return None
 
 
 def find_schedule_by_name(name):

@@ -32,6 +32,25 @@ def get_sheet_and_viewports():
     return None, []
 
 
+def repair_orphans(viewports):
+    schedules = lib.get_schedules_by_name()
+    repairs = []
+    for viewport in viewports:
+        view = revit.doc.GetElement(viewport.ViewId)
+        if not isinstance(view, DB.ViewPlan):
+            continue
+        for tag in lib.get_space_tags(view):
+            schedule = lib.find_orphan_schedule(tag, viewport, schedules)
+            if schedule:
+                schedules.pop(schedule.Name)
+                repairs.append((schedule, tag))
+    if repairs:
+        with revit.Transaction("Planting Tag: Relink schedules"):
+            for schedule, tag in repairs:
+                lib.set_schedule_tag(schedule, tag)
+    return len(repairs)
+
+
 def collect_targets(sheet, viewports):
     viewport_by_view = dict((vp.ViewId, vp) for vp in viewports)
     targets = []
@@ -71,6 +90,7 @@ def main():
         )
     hook.register()
     try:
+        relinked = repair_orphans(viewports)
         targets = collect_targets(sheet, viewports)
         if not targets:
             forms.alert(
@@ -80,9 +100,11 @@ def main():
                 exitscript=True,
             )
         moved = apply_targets(targets)
-        if moved:
+        if moved or relinked:
             forms.toast(
-                "Moved {} planting schedule(s).".format(moved),
+                "Moved {} and relinked {} planting schedule(s).".format(
+                    moved, relinked
+                ),
                 title="Update Planting Schedules",
             )
         else:

@@ -54,6 +54,19 @@ def get_state():
     return AppDomain.CurrentDomain.GetData(STATE_KEY)
 
 
+def find_orphans(tag_by_id, viewport_by_view):
+    schedules = lib.get_schedules_by_name()
+    orphans = {}
+    for tag in tag_by_id.values():
+        schedule = lib.find_orphan_schedule(
+            tag, viewport_by_view[tag.OwnerViewId], schedules
+        )
+        if schedule:
+            schedules.pop(schedule.Name)
+            orphans[lib.get_id_value(schedule.Id)] = (schedule, tag)
+    return orphans
+
+
 def find_follow_moves(doc, tag_id_values):
     tags = [doc.GetElement(DB.ElementId(value)) for value in tag_id_values]
     tags = [t for t in tags if isinstance(t, DB.Mechanical.SpaceTag)]
@@ -65,7 +78,8 @@ def find_follow_moves(doc, tag_id_values):
         (lib.get_id_value(t.Id), t) for t in tags if t.OwnerViewId in viewport_by_view
     )
     if not tag_by_id:
-        return []
+        return [], []
+    orphans = find_orphans(tag_by_id, viewport_by_view)
     sheet_ids = set(
         viewport_by_view[t.OwnerViewId].SheetId for t in tag_by_id.values()
     )
@@ -76,17 +90,11 @@ def find_follow_moves(doc, tag_id_values):
         if instance.OwnerViewId not in sheet_ids:
             continue
         linked = lib.get_schedule_tag(doc.GetElement(instance.ScheduleId))
-        tag = tag_by_id.get(lib.get_id_value(linked.Id)) if linked else None
-        if tag:
-            candidates.append((instance, tag))
-    candidates = []
-    for instance in DB.FilteredElementCollector(doc).OfClass(
-        DB.ScheduleSheetInstance
-    ):
-        if instance.OwnerViewId not in sheet_ids:
-            continue
-        linked = lib.get_schedule_tag(doc.GetElement(instance.ScheduleId))
-        tag = tag_by_id.get(lib.get_id_value(linked.Id)) if linked else None
+        if linked:
+            tag = tag_by_id.get(lib.get_id_value(linked.Id))
+        else:
+            orphan = orphans.get(lib.get_id_value(instance.ScheduleId))
+            tag = orphan[1] if orphan else None
         if tag:
             candidates.append((instance, tag))
     moves = []
@@ -97,13 +105,16 @@ def find_follow_moves(doc, tag_id_values):
         )
         if instance.Point.DistanceTo(point) > lib.MOVE_TOLERANCE_FT:
             moves.append((instance, point))
-    return moves
+    return list(orphans.values()), moves
+
 
 def follow_tags(doc, tag_id_values):
-    moves = find_follow_moves(doc, tag_id_values)
-    if not moves:
+    repairs, moves = find_follow_moves(doc, tag_id_values)
+    if not repairs and not moves:
         return
     with revit.Transaction(FOLLOW_TRANSACTION_NAME):
+        for schedule, tag in repairs:
+            lib.set_schedule_tag(schedule, tag)
         for instance, point in moves:
             instance.Point = point
 
