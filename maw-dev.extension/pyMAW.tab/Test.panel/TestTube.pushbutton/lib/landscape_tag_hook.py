@@ -43,7 +43,9 @@ class HookState(object):
         self.pending_ids = set()
         self.document = None
         self.failures = 0
-        self.tag_filter = DB.ElementCategoryFilter(DB.BuiltInCategory.OST_MEPSpaceTags)
+        self.tag_filter = DB.ElementCategoryFilter(
+            DB.ElementId(DB.BuiltInCategory.OST_MEPSpaceTags)
+        )
         self.handler = None
         self.external_event = None
         self.delegate = None
