@@ -1,0 +1,7 @@
+title: "Planting\nTag"
+tooltip: Tag planting beds and keep their planting schedules positioned on the sheet.
+author: "Michael Warwick\nMAW Design"
+min_revit_version: 2021
+layout:
+  - Tag
+  - Update
