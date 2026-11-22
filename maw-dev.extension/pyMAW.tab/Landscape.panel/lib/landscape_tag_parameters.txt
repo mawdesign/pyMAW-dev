@@ -6,4 +6,4 @@ META	2	1
 GROUP	1	Landscape Tag
 *PARAM	GUID	NAME	DATATYPE	DATACATEGORY	GROUP	VISIBLE	DESCRIPTION	USERMODIFIABLE	HIDEWHENNOVALUE
 PARAM	3b9ef27a-c415-4060-bbfe-c28301f53a23	LANDSCAPE_TAG_SETTINGS	TEXT		1	1	Landscape tag tool settings stored as JSON. Managed by the tool.	0	0
-PARAM	c62b258e-353f-469f-bb57-6f053712148d	LANDSCAPE_TAG_ID	TEXT		1	1	Element Id of the Space Tag that a planting schedule follows. Managed by the tool.	0	0
+PARAM	c62b258e-353f-469f-bb57-6f053712148d	LANDSCAPE_TAG_ID	TEXT		1	1	Element Id of the Space Tag that a planting schedule follows. Managed by the tool. Do not edit.	1	0
