@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Layout Walls In Plan.
-
+"""
+Layout Walls In Plan
 Draws all basic wall types into the active floor plan in a 1m x 1m grid.
 """
 

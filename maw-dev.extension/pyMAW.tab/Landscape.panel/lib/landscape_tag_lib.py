@@ -161,26 +161,6 @@ def pick_space_parameter(space, settings):
     return selected
 
 
-def get_space_parameter_names(space):
-    return sorted(
-        p.Definition.Name
-        for p in space.Parameters
-        if p.StorageType == DB.StorageType.String
-        or p.StorageType == DB.StorageType.Integer
-    )
-
-
-def pick_space_parameter(space, settings):
-    selected = forms.SelectFromList.show(
-        get_space_parameter_names(space),
-        title="Space parameter for bed / planting mix",
-        button_name="Use parameter",
-    )
-    if selected:
-        settings["space_parameter"] = selected
-    return selected
-
-
 def get_space_parameter_name(space, settings):
     saved = settings.get("space_parameter")
     if saved and space.LookupParameter(saved):

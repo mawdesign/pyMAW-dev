@@ -71,8 +71,7 @@ def find_follow_moves(doc, tag_id_values):
     tags = [doc.GetElement(DB.ElementId(value)) for value in tag_id_values]
     tags = [t for t in tags if isinstance(t, DB.Mechanical.SpaceTag)]
     viewport_by_view = dict(
-        (vp.ViewId, vp)
-        for vp in DB.FilteredElementCollector(doc).OfClass(DB.Viewport)
+        (vp.ViewId, vp) for vp in DB.FilteredElementCollector(doc).OfClass(DB.Viewport)
     )
     tag_by_id = dict(
         (lib.get_id_value(t.Id), t) for t in tags if t.OwnerViewId in viewport_by_view
@@ -80,13 +79,9 @@ def find_follow_moves(doc, tag_id_values):
     if not tag_by_id:
         return [], []
     orphans = find_orphans(tag_by_id, viewport_by_view)
-    sheet_ids = set(
-        viewport_by_view[t.OwnerViewId].SheetId for t in tag_by_id.values()
-    )
+    sheet_ids = set(viewport_by_view[t.OwnerViewId].SheetId for t in tag_by_id.values())
     candidates = []
-    for instance in DB.FilteredElementCollector(doc).OfClass(
-        DB.ScheduleSheetInstance
-    ):
+    for instance in DB.FilteredElementCollector(doc).OfClass(DB.ScheduleSheetInstance):
         if instance.OwnerViewId not in sheet_ids:
             continue
         linked = lib.get_schedule_tag(doc.GetElement(instance.ScheduleId))
@@ -100,9 +95,7 @@ def find_follow_moves(doc, tag_id_values):
     moves = []
     for instance, tag in candidates:
         view = doc.GetElement(tag.OwnerViewId)
-        point = lib.schedule_point_for_tag(
-            tag, view, viewport_by_view[tag.OwnerViewId]
-        )
+        point = lib.schedule_point_for_tag(tag, view, viewport_by_view[tag.OwnerViewId])
         if instance.Point.DistanceTo(point) > lib.MOVE_TOLERANCE_FT:
             moves.append((instance, point))
     return list(orphans.values()), moves

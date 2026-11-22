@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Import Wall Types from Excel.
-
+"""
+Import Wall Types from Excel
 Reads an Excel file to create multi-layer wall types and their materials.
 """
 
 # # -------------- Standard Library Imports --------------
+import sys
 import re
 import traceback
 
@@ -14,7 +15,7 @@ from System.Collections.Generic import List
 # # ------------------ pyRevit Imports -------------------
 from pyrevit import script, forms
 from pyrevit import revit
-from pyrevit import DB
+from pyrevit import DB, UI
 
 # Initialize pyRevit logger
 logger = script.get_logger()
@@ -281,7 +282,7 @@ def import_wall_types_from_excel():
         return
 
     # Remove headers
-    raw_data[0]
+    headers = raw_data[0]
     wall_rows = raw_data[1:]
 
     # 3. Get a base wall type to duplicate
@@ -588,7 +589,7 @@ def import_wall_types_from_excel():
                         )
                     )
 
-            except Exception:
+            except Exception as e:
                 # Catch row-specific errors and log the traceback
                 type_name_safe = str(row[2]).strip() if len(row) > 2 else "Unknown"
                 logger.error(

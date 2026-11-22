@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Legend Components.
-
+"""
+Legend Components
 Places Legend Components for all types of a selected category in a grid.
 
 Check that the current view is a legend view, asks for the category, and
@@ -11,6 +11,7 @@ tracing layered compound structures (Walls/Floors/Roofs/Ceilings) with Detail Co
 
 # # -------------- Standard Library Imports --------------
 import sys
+import math
 
 # # ------------------ pyRevit Imports -------------------
 from pyrevit import script, forms
@@ -52,10 +53,10 @@ def safe_get_fam_name(elem):
 
 
 def legend_tag(pairs):
-    """Dummy function for future integration with the tagging library module.
-
+    """
+    Dummy function for future integration with the tagging library module.
     Expected to populate annotation parameters based on the associated legend component.
-    :param pairs: List of tuples -> [(legend_component_instance, generic_annotation_instance), ...].
+    :param pairs: List of tuples -> [(legend_component_instance, generic_annotation_instance), ...]
     """
     pass
 
@@ -276,11 +277,11 @@ def legend_components():
 
     # 7. Place the Legend Components using defined variables
     # Convert meters to Revit internal units (decimal feet)
-    m_to_ft = 1.0 / 0.3048
-    spacing_x = SPACING_X_M * m_to_ft
-    spacing_y = SPACING_Y_M * m_to_ft
-    text_offset = TEXT_OFFSET_Y_M * m_to_ft
-    host_length = HOST_LENGTH_M * m_to_ft
+    M_TO_FT = 1.0 / 0.3048
+    spacing_x = SPACING_X_M * M_TO_FT
+    spacing_y = SPACING_Y_M * M_TO_FT
+    text_offset = TEXT_OFFSET_Y_M * M_TO_FT
+    host_length = HOST_LENGTH_M * M_TO_FT
 
     sorted_families = sorted(families_dict.keys())
 
@@ -368,7 +369,7 @@ def legend_components():
                                         text_pt, selected_anno_type, doc.ActiveView
                                     )
                                     legend_anno_pairs.append((new_comp, new_anno))
-                                except Exception:
+                                except Exception as anno_e:
                                     import traceback
 
                                     err_msg = (
@@ -458,7 +459,7 @@ def legend_components():
                                 errors += 1
                                 doc.Delete(new_comp.Id)
 
-                        except Exception:
+                        except Exception as type_e:
                             # Revert the copied component if it's an unsupported system type that fails the type swap
                             doc.Delete(new_comp.Id)
                             import traceback
@@ -470,7 +471,7 @@ def legend_components():
                             error_logs.append(err_msg)
                             errors += 1
 
-                    except Exception:
+                    except Exception as e:
                         # Catch copy failures
                         import traceback
 

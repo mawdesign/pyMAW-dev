@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Text To Pick Point.
-
+"""
+Text To Pick Point
 Moves selected text notes to a user-picked location.
 """
 # # -------------- Standard Library Imports --------------
@@ -14,9 +14,9 @@ from System.Collections.Generic import List
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
 # # ------------------ pyRevit Imports -------------------
-from pyrevit import forms
+from pyrevit import script, forms
 from pyrevit import revit
-from pyrevit import DB
+from pyrevit import DB, UI
 
 
 def text_to_pick_point():
@@ -27,7 +27,7 @@ def text_to_pick_point():
     selection = revit.get_selection()
 
     # 2. Filter the selection to only include Text Notes
-    text_notes = [el for el in selection if isinstance(el, DB.TextElement)]
+    text_notes = [el for el in selection if isinstance(el, DB.TextNote)]
 
     # 3. Check if any text notes were selected
     if not text_notes:
