@@ -21,7 +21,7 @@ TEMPLATE_PREFIX = "_TEMPLATE"
 SCHEDULE_NAME = "MASS PLANTING - {detail}/{sheet} - {space}"
 SCHEDULE_TAG_PARAM = "Location_MAW"
 SCHEDULE_GAP_X_FT = 0 / 304.8
-SCHEDULE_GAP_Y_FT = -30 / 304.8
+SCHEDULE_GAP_Y_FT = 0 / 304.8
 INVALID_NAME_CHARS = re.compile(r"[\\:{}\[\]|;<>?`~]")
 
 
@@ -201,7 +201,7 @@ def model_to_sheet_point(point, view, viewport):
 def schedule_point_for_tag(tag, view, viewport):
     sheet_point = model_to_sheet_point(tag.TagHeadPosition, view, viewport)
     return DB.XYZ(
-        sheet_point.X + SCHEDULE_GAP_X_FT, sheet_point.Y - SCHEDULE_GAP_Y_FT, 0
+        sheet_point.X + SCHEDULE_GAP_X_FT, sheet_point.Y + SCHEDULE_GAP_Y_FT, 0
     )
 
 

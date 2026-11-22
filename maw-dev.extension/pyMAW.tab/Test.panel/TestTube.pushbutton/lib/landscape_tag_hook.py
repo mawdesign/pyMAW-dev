@@ -43,6 +43,7 @@ class HookState(object):
         self.pending_ids = set()
         self.document = None
         self.failures = 0
+<<<<<<< Updated upstream
         self.tag_filter = DB.ElementCategoryFilter(
             DB.ElementId(DB.BuiltInCategory.OST_MEPSpaceTags)
         )
@@ -70,7 +71,7 @@ def find_follow_moves(doc, tag_id_values):
     sheet_ids = set(
         viewport_by_view[t.OwnerViewId].SheetId for t in tag_by_id.values()
     )
-    moves = []
+    candidates = []
     for instance in DB.FilteredElementCollector(doc).OfClass(
         DB.ScheduleSheetInstance
     ):
@@ -79,12 +80,15 @@ def find_follow_moves(doc, tag_id_values):
         linked = lib.get_schedule_tag(doc.GetElement(instance.ScheduleId))
         tag = tag_by_id.get(lib.get_id_value(linked.Id)) if linked else None
         if tag:
-            view = doc.GetElement(tag.OwnerViewId)
-            point = lib.schedule_point_for_tag(
-                tag, view, viewport_by_view[tag.OwnerViewId]
-            )
-            if instance.Point.DistanceTo(point) > MOVE_TOLERANCE_FT:
-                moves.append((instance, point))
+            candidates.append((instance, tag))
+    moves = []
+    for instance, tag in candidates:
+        view = doc.GetElement(tag.OwnerViewId)
+        point = lib.schedule_point_for_tag(
+            tag, view, viewport_by_view[tag.OwnerViewId]
+        )
+        if instance.Point.DistanceTo(point) > MOVE_TOLERANCE_FT:
+            moves.append((instance, point))
     return moves
 
 

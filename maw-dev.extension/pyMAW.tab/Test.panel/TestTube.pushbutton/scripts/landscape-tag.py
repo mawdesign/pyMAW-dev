@@ -98,6 +98,7 @@ def main():
         hook.register()
     except Exception:
         print(traceback.format_exc())
+        hook.unregister()
     config = script.get_config(lib.CONFIG_SECTION)
 
     try:
