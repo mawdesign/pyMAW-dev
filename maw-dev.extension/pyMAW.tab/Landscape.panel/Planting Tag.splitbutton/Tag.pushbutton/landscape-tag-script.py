@@ -4,12 +4,14 @@
 Place Space Tags as you would normally (multiple spaces, Esc to finish). For
 each bed value a copy of the template schedule (name starts with '_TEMPLATE')
 is filtered to that value, named by detail number, sheet number and space
-number, and placed on the sheet just below the tag. The view must be on a
-sheet, so the same bed can be tagged on several sheets or views. The
-tag's element Id is stored on the schedule so landscape-tag-update can move
-the schedules after the tags are rearranged.
+number, and placed on the sheet at the tag, plus the configured offset. The
+view must be on a sheet, so the same bed can be tagged on several sheets or
+views. The tag's element Id is stored on the schedule so landscape-tag-update
+can move the schedules after the tags are rearranged. Tagging a bed again in
+the same view moves its schedule to the newest tag.
 
-Shift-click to choose a different Space parameter.
+Shift-click to change the settings: Space parameter, template schedule and
+schedule offset from the tag.
 """
 
 # # -------------- Standard Library Imports --------------
@@ -68,16 +70,22 @@ def process_group(value, tags, template, parameter_name, view, viewport):
         schedule = lib.get_or_create_schedule(
             template, parameter_name, value, view, name
         )
-        if not lib.get_schedule_tag(schedule):
-            if not lib.set_schedule_tag(schedule, tags[0]):
-                logger.warning(
-                    "Could not write '{}' on schedule.".format(lib.SCHEDULE_TAG_PARAM)
-                )
-        if not lib.find_schedule_instance(schedule, sheet):
+        if not lib.set_schedule_tag(schedule, tags[0]):
+            logger.warning(
+                "Could not write '{}' on schedule.".format(lib.SCHEDULE_TAG_PARAM)
+            )
+        instance = lib.find_schedule_instance(schedule, sheet)
+        if instance:
+            instance.Point = point
+        else:
             DB.ScheduleSheetInstance.Create(revit.doc, sheet.Id, schedule.Id, point)
 
 
 def main():
+    if script.EXEC_PARAMS.config_mode:
+        lib.configure_settings()
+        return
+
     view = revit.active_view
     if not isinstance(view, DB.ViewPlan):
         forms.alert("Run this from a plan view.", exitscript=True)
@@ -93,19 +101,19 @@ def main():
     if not tag_type:
         forms.alert("No default Space Tag type found.", exitscript=True)
 
-    template = lib.choose_template()
+    settings = lib.load_settings()
+    template = lib.choose_template(settings)
     try:
         hook.register()
     except Exception:
         print(traceback.format_exc())
         hook.unregister()
-    config = script.get_config(lib.CONFIG_SECTION)
 
     try:
         tags = [t for t in place_tags(view, tag_type) if t.Space]
         if not tags:
             return
-        parameter_name = lib.get_space_parameter_name(tags[0].Space, config)
+        parameter_name = lib.get_space_parameter_name(tags[0].Space, settings)
         if not parameter_name:
             return
         groups = group_tags_by_value(tags, parameter_name)

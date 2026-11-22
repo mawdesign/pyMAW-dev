@@ -6,6 +6,7 @@ parameter named by SCHEDULE_TAG_PARAM (text or integer).
 """
 
 # # -------------- Standard Library Imports --------------
+import json
 import re
 
 # # ------------------ pyRevit Imports -------------------
@@ -15,13 +16,17 @@ from pyrevit.compat import get_elementid_value_func
 logger = script.get_logger()
 get_id_value = get_elementid_value_func()
 
-CONFIG_SECTION = "landscape_tag"
-CONFIG_KEY = "space_parameter"
+SETTINGS_FILE_ID = "landscape_tag_settings"
+DEFAULT_SETTINGS = {
+    "space_parameter": None,
+    "template_name": None,
+    "offset_x_mm": 0.0,
+    "offset_y_mm": 0.0,
+}
 TEMPLATE_PREFIX = "_TEMPLATE"
 SCHEDULE_NAME = "MASS PLANTING - {detail}/{sheet} - {space}"
 SCHEDULE_TAG_PARAM = "Location_MAW"
-SCHEDULE_GAP_X_FT = 0 / 304.8
-SCHEDULE_GAP_Y_FT = 0 / 304.8
+MM_PER_FOOT = 304.8
 INVALID_NAME_CHARS = re.compile(r"[\\:{}\[\]|;<>?`~]")
 
 
@@ -29,49 +34,133 @@ def get_text_value(parameter):
     return parameter.AsString() or parameter.AsValueString() or ""
 
 
-def get_space_parameter_name(space, config):
-    saved = getattr(config, CONFIG_KEY, None)
-    if saved and not script.EXEC_PARAMS.config_mode and space.LookupParameter(saved):
-        return saved
-    names = sorted(
+def get_settings_path():
+    return script.get_data_file(SETTINGS_FILE_ID, "json", add_cmd_name=False)
+
+
+def load_settings():
+    settings = dict(DEFAULT_SETTINGS)
+    try:
+        with open(get_settings_path(), "r") as settings_file:
+            settings.update(json.load(settings_file))
+    except (IOError, ValueError):
+        logger.debug("No saved landscape tag settings; using defaults.")
+    return settings
+
+
+def save_settings(settings):
+    with open(get_settings_path(), "w") as settings_file:
+        json.dump(settings, settings_file, indent=2)
+
+
+def get_space_parameter_names(space):
+    return sorted(
         p.Definition.Name
         for p in space.Parameters
         if p.StorageType == DB.StorageType.String
         or p.StorageType == DB.StorageType.Integer
     )
+
+
+def pick_space_parameter(space, settings):
     selected = forms.SelectFromList.show(
-        names,
+        get_space_parameter_names(space),
         title="Space parameter for bed / planting mix",
         button_name="Use parameter",
     )
-    if not selected:
-        return None
-    setattr(config, CONFIG_KEY, selected)
-    script.save_config()
+    if selected:
+        settings["space_parameter"] = selected
+        save_settings(settings)
     return selected
 
 
-def choose_template():
+def get_space_parameter_name(space, settings):
+    saved = settings.get("space_parameter")
+    if saved and space.LookupParameter(saved):
+        return saved
+    return pick_space_parameter(space, settings)
+
+
+def find_template_schedules():
     prefix = TEMPLATE_PREFIX.lower()
-    templates = [
+    return [
         s
         for s in DB.FilteredElementCollector(revit.doc).OfClass(DB.ViewSchedule)
         if not s.IsTemplate and s.Name.lower().startswith(prefix)
     ]
-    if not templates:
-        forms.alert(
-            "No schedule found with a name starting '{}'.".format(TEMPLATE_PREFIX),
-            exitscript=True,
-        )
-    if len(templates) == 1:
-        return templates[0]
+
+
+def pick_template(templates, settings):
     by_name = dict((s.Name, s) for s in templates)
     selected = forms.SelectFromList.show(
         sorted(by_name), title="Select template schedule", button_name="Use template"
     )
     if not selected:
-        script.exit()
+        return None
+    settings["template_name"] = selected
+    save_settings(settings)
     return by_name[selected]
+
+
+def choose_template(settings):
+    templates = find_template_schedules()
+    if not templates:
+        forms.alert(
+            "No schedule found with a name starting '{}'.".format(TEMPLATE_PREFIX),
+            exitscript=True,
+        )
+    saved = [t for t in templates if t.Name == settings.get("template_name")]
+    if saved:
+        return saved[0]
+    if len(templates) == 1:
+        return templates[0]
+    template = pick_template(templates, settings)
+    if not template:
+        script.exit()
+    return template
+
+
+def ask_offset(label, current):
+    text = forms.ask_for_string(
+        default=str(current),
+        prompt="{} offset in mm on the sheet.".format(label),
+        title="Schedule offset from tag",
+    )
+    if text is None:
+        return current
+    try:
+        return float(text)
+    except ValueError:
+        forms.alert("'{}' is not a number. Keeping {}.".format(text, current))
+        return current
+
+
+def configure_settings():
+    settings = load_settings()
+    spaces = list(
+        DB.FilteredElementCollector(revit.doc)
+        .OfCategory(DB.BuiltInCategory.OST_MEPSpaces)
+        .WhereElementIsNotElementType()
+    )
+    if spaces:
+        pick_space_parameter(spaces[0], settings)
+    else:
+        forms.alert("No Spaces in the model, so the Space parameter is unchanged.")
+    templates = find_template_schedules()
+    if len(templates) > 1:
+        pick_template(templates, settings)
+    elif not templates:
+        forms.alert(
+            "No schedule found with a name starting '{}'.".format(TEMPLATE_PREFIX)
+        )
+    settings["offset_x_mm"] = ask_offset(
+        "Horizontal (positive moves right)", settings["offset_x_mm"]
+    )
+    settings["offset_y_mm"] = ask_offset(
+        "Vertical (positive moves up)", settings["offset_y_mm"]
+    )
+    save_settings(settings)
+    return settings
 
 
 def find_schedule_by_name(name):
@@ -199,9 +288,12 @@ def model_to_sheet_point(point, view, viewport):
 
 
 def schedule_point_for_tag(tag, view, viewport):
+    settings = load_settings()
     sheet_point = model_to_sheet_point(tag.TagHeadPosition, view, viewport)
     return DB.XYZ(
-        sheet_point.X + SCHEDULE_GAP_X_FT, sheet_point.Y + SCHEDULE_GAP_Y_FT, 0
+        sheet_point.X + settings["offset_x_mm"] / MM_PER_FOOT,
+        sheet_point.Y + settings["offset_y_mm"] / MM_PER_FOOT,
+        0,
     )
 
 

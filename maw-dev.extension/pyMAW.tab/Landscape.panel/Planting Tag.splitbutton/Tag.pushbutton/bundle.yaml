@@ -1,8 +1,8 @@
 title: "Tag\nPlanting ●"
 tooltip: |-
-  Place Space Tags on planting beds. Create a planting schedule for each bed and place it below the tag on the sheet. The view must be placed on a sheet.
+  Place Space Tags on planting beds. Create a planting schedule for each bed and place it at the tag on the sheet. Tag a bed again to move its schedule to the new tag. The view must be placed on a sheet.
 
-  Shift-click: Choose the Space parameter that holds the bed or planting mix.
+  Shift-click: Change the Space parameter, template schedule and schedule offset.
 author: "Michael Warwick\nMAW Design"
 min_revit_version: 2021
 context: active-plan-view
