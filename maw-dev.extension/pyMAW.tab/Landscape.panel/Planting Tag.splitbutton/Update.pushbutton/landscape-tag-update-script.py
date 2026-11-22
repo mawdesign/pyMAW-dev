@@ -18,7 +18,6 @@ import landscape_tag_lib as lib
 __persistentengine__ = True
 
 logger = script.get_logger()
-output = script.get_output()
 
 
 def get_sheet_and_viewports():
@@ -50,14 +49,17 @@ def collect_targets(sheet, viewports):
 
 
 def apply_targets(targets):
-    points = [
-        lib.schedule_point_for_tag(tag, view, viewport)
-        for _, tag, view, viewport in targets
-    ]
+    moves = []
+    for instance, tag, view, viewport in targets:
+        point = lib.schedule_point_for_tag(tag, view, viewport)
+        if instance.Point.DistanceTo(point) > lib.MOVE_TOLERANCE_FT:
+            moves.append((instance, point))
+    if not moves:
+        return 0
     with revit.Transaction("Planting Tag: Update schedule positions"):
-        for (instance, _, _, _), point in zip(targets, points):
+        for instance, point in moves:
             instance.Point = point
-    return len(targets)
+    return len(moves)
 
 
 def main():
@@ -77,7 +79,14 @@ def main():
                 ),
                 exitscript=True,
             )
-        output.print_md("Moved {} schedule(s).".format(apply_targets(targets)))
+        moved = apply_targets(targets)
+        if moved:
+            forms.toast(
+                "Moved {} planting schedule(s).".format(moved),
+                title="Update Planting Schedules",
+            )
+        else:
+            forms.alert("All planting schedules are already in position.")
     except Exception:
         logger.error(traceback.format_exc())
 

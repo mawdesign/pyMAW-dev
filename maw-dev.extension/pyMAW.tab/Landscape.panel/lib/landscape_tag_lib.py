@@ -27,6 +27,8 @@ TEMPLATE_PREFIX = "_TEMPLATE"
 SCHEDULE_NAME = "MASS PLANTING - {detail}/{sheet} - {space}"
 SCHEDULE_TAG_PARAM = "Location_MAW"
 MM_PER_FOOT = 304.8
+MOVE_TOLERANCE_FT = 1e-4
+FALLBACK_SPACE_PARAMETER = "Number"
 INVALID_NAME_CHARS = re.compile(r"[\\:{}\[\]|;<>?`~]")
 
 
@@ -51,6 +53,36 @@ def load_settings():
 def save_settings(settings):
     with open(get_settings_path(), "w") as settings_file:
         json.dump(settings, settings_file, indent=2)
+
+
+def get_space_parameter_names(space):
+    return sorted(
+        p.Definition.Name
+        for p in space.Parameters
+        if p.StorageType == DB.StorageType.String
+        or p.StorageType == DB.StorageType.Integer
+    )
+
+
+def pick_space_parameter(space, settings):
+    names = get_space_parameter_names(space)
+    current = settings.get("space_parameter")
+    if current in names:
+        default = current
+    elif FALLBACK_SPACE_PARAMETER in names:
+        default = FALLBACK_SPACE_PARAMETER
+    else:
+        default = None
+    selected = forms.ask_for_one_item(
+        names,
+        default=default,
+        prompt="Space parameter for bed / planting mix",
+        title="Landscape tag settings",
+    )
+    if selected:
+        settings["space_parameter"] = selected
+        save_settings(settings)
+    return selected
 
 
 def get_space_parameter_names(space):

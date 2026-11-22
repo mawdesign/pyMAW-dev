@@ -35,7 +35,6 @@ STATE_KEY = "LANDSCAPE_TAG_HOOK"
 OWN_TRANSACTION_PREFIX = "Planting Tag:"
 FOLLOW_TRANSACTION_NAME = "Planting Tag: Follow tag"
 MAX_FAILURES = 3
-MOVE_TOLERANCE_FT = 1e-4
 
 
 class HookState(object):
@@ -96,7 +95,7 @@ def find_follow_moves(doc, tag_id_values):
         point = lib.schedule_point_for_tag(
             tag, view, viewport_by_view[tag.OwnerViewId]
         )
-        if instance.Point.DistanceTo(point) > MOVE_TOLERANCE_FT:
+        if instance.Point.DistanceTo(point) > lib.MOVE_TOLERANCE_FT:
             moves.append((instance, point))
     return moves
 
