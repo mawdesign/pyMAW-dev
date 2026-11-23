@@ -17,7 +17,7 @@ import re
 from pyrevit import revit, DB, forms, script, HOST_APP
 from pyrevit.compat import get_elementid_value_func
 
-from System import Guid
+from System import Guid, Int32, Int64
 
 logger = script.get_logger()
 get_id_value = get_elementid_value_func()
@@ -270,6 +270,31 @@ def find_orphan_schedule(tag, viewport, schedules_by_name):
     return None
 
 
+def get_tag_viewports(tag, viewports):
+    """Returns the viewports whose view shows the tag.
+
+    Note: a tag drawn in a dependent view is owned by its primary view, so a
+    viewport matches when its view is the owner or a dependent of the owner.
+    """
+    owner_id = tag.OwnerViewId
+    matches = []
+    for viewport in viewports:
+        view = revit.doc.GetElement(viewport.ViewId)
+        if view.Id == owner_id or view.GetPrimaryViewId() == owner_id:
+            matches.append(viewport)
+    return matches
+
+
+def find_tag_viewport(tag, viewports, schedule_name):
+    matches = get_tag_viewports(tag, viewports)
+    space = tag.Space
+    if space:
+        for viewport in matches:
+            if build_schedule_name(viewport, space) == schedule_name:
+                return viewport
+    return matches[0] if matches else None
+
+
 def find_schedule_by_name(name):
     for schedule in DB.FilteredElementCollector(revit.doc).OfClass(DB.ViewSchedule):
         if schedule.Name == name:
@@ -337,6 +362,17 @@ def get_or_create_schedule(template, parameter_name, value, view, name):
     return schedule
 
 
+def make_element_id(value):
+    """Builds an ElementId from a Python int on any Revit version.
+
+    Note: Revit 2024+ ElementId has Int32 and Int64 constructors, and IronPython
+    cannot choose between them for a plain int.
+    """
+    if HOST_APP.is_newer_than(2023):
+        return DB.ElementId(Int64(value))
+    return DB.ElementId(Int32(value))
+
+
 def get_schedule_tag(schedule):
     parameter = find_parameter(schedule, SCHEDULE_TAG_PARAM, SCHEDULE_TAG_GUID)
     if not parameter or not parameter.HasValue:
@@ -348,7 +384,7 @@ def get_schedule_tag(schedule):
         if not text.isdigit():
             return None
         value = int(text)
-    tag = revit.doc.GetElement(DB.ElementId(value)) if value > 0 else None
+    tag = revit.doc.GetElement(make_element_id(value)) if value > 0 else None
     return tag if isinstance(tag, DB.Mechanical.SpaceTag) else None
 
 

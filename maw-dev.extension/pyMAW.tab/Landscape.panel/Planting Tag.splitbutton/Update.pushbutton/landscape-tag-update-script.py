@@ -52,17 +52,17 @@ def repair_orphans(viewports):
 
 
 def collect_targets(sheet, viewports):
-    viewport_by_view = dict((vp.ViewId, vp) for vp in viewports)
     targets = []
     for instance in DB.FilteredElementCollector(revit.doc).OfClass(
         DB.ScheduleSheetInstance
     ):
         if instance.OwnerViewId != sheet.Id:
             continue
-        tag = lib.get_schedule_tag(revit.doc.GetElement(instance.ScheduleId))
-        viewport = viewport_by_view.get(tag.OwnerViewId) if tag else None
+        schedule = revit.doc.GetElement(instance.ScheduleId)
+        tag = lib.get_schedule_tag(schedule)
+        viewport = lib.find_tag_viewport(tag, viewports, schedule.Name) if tag else None
         if viewport:
-            view = revit.doc.GetElement(tag.OwnerViewId)
+            view = revit.doc.GetElement(viewport.ViewId)
             targets.append((instance, tag, view, viewport))
     return targets
 

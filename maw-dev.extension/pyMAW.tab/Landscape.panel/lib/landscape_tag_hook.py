@@ -54,48 +54,62 @@ def get_state():
     return AppDomain.CurrentDomain.GetData(STATE_KEY)
 
 
-def find_orphans(tag_by_id, viewport_by_view):
+def find_orphans(tag_viewports):
     schedules = lib.get_schedules_by_name()
     orphans = {}
-    for tag in tag_by_id.values():
-        schedule = lib.find_orphan_schedule(
-            tag, viewport_by_view[tag.OwnerViewId], schedules
-        )
-        if schedule:
-            schedules.pop(schedule.Name)
-            orphans[lib.get_id_value(schedule.Id)] = (schedule, tag)
+    for tag, viewports in tag_viewports:
+        for viewport in viewports:
+            schedule = lib.find_orphan_schedule(tag, viewport, schedules)
+            if schedule:
+                schedules.pop(schedule.Name)
+                orphans[lib.get_id_value(schedule.Id)] = (schedule, tag)
+                break
     return orphans
 
 
 def find_follow_moves(doc, tag_id_values):
-    tags = [doc.GetElement(DB.ElementId(value)) for value in tag_id_values]
+    tags = [doc.GetElement(lib.make_element_id(value)) for value in tag_id_values]
     tags = [t for t in tags if isinstance(t, DB.Mechanical.SpaceTag)]
-    viewport_by_view = dict(
-        (vp.ViewId, vp) for vp in DB.FilteredElementCollector(doc).OfClass(DB.Viewport)
-    )
-    tag_by_id = dict(
-        (lib.get_id_value(t.Id), t) for t in tags if t.OwnerViewId in viewport_by_view
-    )
+    all_viewports = list(DB.FilteredElementCollector(doc).OfClass(DB.Viewport))
+    tag_by_id = {}
+    tag_viewports = []
+    for tag in tags:
+        matches = lib.get_tag_viewports(tag, all_viewports)
+        if matches:
+            tag_by_id[lib.get_id_value(tag.Id)] = tag
+            tag_viewports.append((tag, matches))
     if not tag_by_id:
         return [], []
-    orphans = find_orphans(tag_by_id, viewport_by_view)
-    sheet_ids = set(viewport_by_view[t.OwnerViewId].SheetId for t in tag_by_id.values())
+    orphans = find_orphans(tag_viewports)
+    viewports_by_sheet = {}
+    for _tag, matches in tag_viewports:
+        for viewport in matches:
+            sheet_viewports = viewports_by_sheet.setdefault(
+                lib.get_id_value(viewport.SheetId), []
+            )
+            if viewport not in sheet_viewports:
+                sheet_viewports.append(viewport)
     candidates = []
     for instance in DB.FilteredElementCollector(doc).OfClass(DB.ScheduleSheetInstance):
-        if instance.OwnerViewId not in sheet_ids:
+        sheet_viewports = viewports_by_sheet.get(lib.get_id_value(instance.OwnerViewId))
+        if not sheet_viewports:
             continue
-        linked = lib.get_schedule_tag(doc.GetElement(instance.ScheduleId))
+        schedule = doc.GetElement(instance.ScheduleId)
+        linked = lib.get_schedule_tag(schedule)
         if linked:
             tag = tag_by_id.get(lib.get_id_value(linked.Id))
         else:
             orphan = orphans.get(lib.get_id_value(instance.ScheduleId))
             tag = orphan[1] if orphan else None
-        if tag:
-            candidates.append((instance, tag))
+        if not tag:
+            continue
+        viewport = lib.find_tag_viewport(tag, sheet_viewports, schedule.Name)
+        if viewport:
+            candidates.append((instance, tag, viewport))
     moves = []
-    for instance, tag in candidates:
-        view = doc.GetElement(tag.OwnerViewId)
-        point = lib.schedule_point_for_tag(tag, view, viewport_by_view[tag.OwnerViewId])
+    for instance, tag, viewport in candidates:
+        view = doc.GetElement(viewport.ViewId)
+        point = lib.schedule_point_for_tag(tag, view, viewport)
         if instance.Point.DistanceTo(point) > lib.MOVE_TOLERANCE_FT:
             moves.append((instance, point))
     return list(orphans.values()), moves
