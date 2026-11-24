@@ -1,0 +1,112 @@
+# Cell outlines for fill patterns (one polygon per brick / tile / board).
+#
+# Used by pattern_cells.py to cut baked bump textures to the unit shapes.
+# Expressions use the same {width} {height} {mortar} tokens as brickpats.yaml.
+# All lengths are millimetres, +y is up, origin is arbitrary (the repeat is
+# periodic, so cells that cross the repeat edge are wrapped by the composer).
+#
+#   params   defaults for the tokens above (plus extras such as {length})
+#   repeat   [w, h] of the rectangular repeat, in world coordinates
+#   rotate   optional, degrees; cells are written axis-aligned and rotated about
+#            the origin by this angle (repeat stays in world coordinates)
+#   cells    list of cells:
+#              rect: [x, y, w, h]              axis-aligned rectangle
+#              poly: [[x, y], ...]             any polygon
+#              angle: texture direction of the long axis (default 0), degrees
+#              count + {i}: repeat the cell count times with i = 0..count-1
+#
+# Brick cells are the brick only (no mortar); the joint is whatever is left.
+
+STACKED:
+    name: Stacked bond
+    params: {width: 230, height: 76, mortar: 10}
+    repeat: ["{width}+{mortar}", "{height}+{mortar}"]
+    cells:
+        - rect: [0, 0, "{width}", "{height}"]
+
+STRETCHERHALF:
+    name: Stretcher bond (half lap)
+    params: {width: 230, height: 76, mortar: 10}
+    repeat: ["{width}+{mortar}", "({height}+{mortar})*2"]
+    cells:
+        - rect: [0, 0, "{width}", "{height}"]
+        - rect: ["({width}+{mortar})/2", "{height}+{mortar}", "{width}", "{height}"]
+
+# Matches the current STRETCHERTHIRD pattern lines: 2 course repeat, 1/3 lap.
+STRETCHERTHIRD:
+    name: Stretcher bond (third lap, 2 course repeat)
+    params: {width: 230, height: 76, mortar: 10}
+    repeat: ["{width}+{mortar}", "({height}+{mortar})*2"]
+    cells:
+        - rect: [0, 0, "{width}", "{height}"]
+        - rect: ["({width}+{mortar})/3", "{height}+{mortar}", "{width}", "{height}"]
+
+ENGLISH:
+    name: English bond
+    params: {width: 230, height: 76, mortar: 10}
+    repeat: ["{width}+{mortar}", "({height}+{mortar})*2"]
+    cells:
+        # stretcher course, quarter lap to the header course
+        - rect: ["({width}+{mortar})*3/4", 0, "{width}", "{height}"]
+        # header course: two headers per repeat
+        - rect: [0, "{height}+{mortar}", "({width}-{mortar})/2", "{height}"]
+        - rect: ["({width}+{mortar})/2", "{height}+{mortar}", "({width}-{mortar})/2", "{height}"]
+
+FLEMISH:
+    name: Flemish bond
+    params: {width: 230, height: 76, mortar: 10}
+    repeat: ["({width}+{mortar})*3/2", "({height}+{mortar})*2"]
+    cells:
+        - rect: [0, 0, "({width}-{mortar})/2", "{height}"]
+        - rect: ["({width}-{mortar})/2+{mortar}", 0, "{width}", "{height}"]
+        - rect: ["({width}+{mortar})*3/4", "{height}+{mortar}", "({width}-{mortar})/2", "{height}"]
+        - rect: ["({width}+{mortar})*3/4+({width}-{mortar})/2+{mortar}", "{height}+{mortar}", "{width}", "{height}"]
+
+# Octagon and square tiles, no grout. {width} is the octagon across-flats size.
+OCTAGONS:
+    name: Octagon and square tiles
+    params: {width: 120, height: 120, mortar: 0}
+    repeat: ["{width}", "{width}"]
+    cells:
+        - poly:
+            - ["-{width}/(2*(1+sqrt(2)))", "-{width}/2"]
+            - ["{width}/(2*(1+sqrt(2)))", "-{width}/2"]
+            - ["{width}/2", "-{width}/(2*(1+sqrt(2)))"]
+            - ["{width}/2", "{width}/(2*(1+sqrt(2)))"]
+            - ["{width}/(2*(1+sqrt(2)))", "{width}/2"]
+            - ["-{width}/(2*(1+sqrt(2)))", "{width}/2"]
+            - ["-{width}/2", "{width}/(2*(1+sqrt(2)))"]
+            - ["-{width}/2", "-{width}/(2*(1+sqrt(2)))"]
+        # square (diamond) between four octagons
+        - poly:
+            - ["{width}/2+{width}/(2+sqrt(2))", "{width}/2"]
+            - ["{width}/2", "{width}/2+{width}/(2+sqrt(2))"]
+            - ["{width}/2-{width}/(2+sqrt(2))", "{width}/2"]
+            - ["{width}/2", "{width}/2-{width}/(2+sqrt(2))"]
+
+# Blocks of boards laid at 90 degrees to each other, blocks on the diagonal.
+# {width} is board width, {length} is board length (block is length x length).
+BASKETWEAVE:
+    name: Basketweave blocks at 45 degrees
+    params: {width: 101.6, height: 0, mortar: 0, length: 609.6}
+    rotate: 45
+    repeat: ["sqrt(2)*{length}", "sqrt(2)*{length}"]
+    cells:
+        # block of horizontal boards
+        - rect: [0, "{i}*{width}", "{length}", "{width}"]
+          count: "round({length}/{width})"
+        # block of vertical boards
+        - rect: ["{length}+{i}*{width}", 0, "{width}", "{length}"]
+          count: "round({length}/{width})"
+          angle: 90
+
+# Classic herringbone at 45 degrees.
+HERRINGBONE:
+    name: Herringbone at 45 degrees
+    params: {width: 101.6, height: 0, mortar: 0, length: 609.6}
+    rotate: 45
+    repeat: ["sqrt(2)*{length}", "sqrt(2)*{width}"]
+    cells:
+        - rect: [0, 0, "{length}", "{width}"]
+        - rect: ["{length}", "{width}-{length}", "{width}", "{length}"]
+          angle: 90

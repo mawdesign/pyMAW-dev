@@ -1,0 +1,9 @@
+{
+  "size": 2048,
+  "ppm": 2.0,
+  "materials": [
+    "brick",
+    "concrete"
+  ],
+  "levels": 3
+}
