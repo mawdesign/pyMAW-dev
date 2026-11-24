@@ -37,7 +37,7 @@ class CellJob(object):
 
 
 class AtlasPlan(object):
-    def __init__(self, width_px, height_px, ppm, sheet_scale, jobs, fill_background_with_base, base_name):
+    def __init__(self, width_px, height_px, ppm, sheet_scale, jobs, fill_background_with_base, base_name, edge_joint_px=0.0):
         self.width_px = width_px
         self.height_px = height_px
         self.ppm = ppm                          # atlas pixels per mm actually used
@@ -46,6 +46,7 @@ class AtlasPlan(object):
         self.repeats = None
         self.fill_background_with_base = fill_background_with_base
         self.base_name = base_name
+        self.edge_joint_px = edge_joint_px      # joint width drawn on cell edges (touching cells only)
 
     @property
     def size_mm(self):
@@ -79,40 +80,51 @@ def plan_atlas(pattern, material, pit_level=2, scratch_level=2, ppm=2.0, max_px=
     scale = ppm / sheet_ppm
     tile = sheet_px * scale          # one sheet tile in atlas pixels (offsets are drawn in this range)
 
-    rng = random.Random(seed)
-    names = [("%s_base" % material)]
+    # one random stream per layer kind, so changing the pit or scratch level (or
+    # switching either off) never moves the base or the other layer
+    kinds = ["base"]
+    names = ["%s_base" % material]
     if pit_level:
+        kinds.append("pits")
         names.append("%s_pits_%d" % (material, pit_level))
     if scratch_level:
+        kinds.append("scratch")
         names.append("%s_scratch_%d" % (material, scratch_level))
+    streams = dict((k, random.Random("%s/%s" % (seed, k))) for k in kinds)
 
     def px(point):
         return (point[0] * ppm, (pattern.repeat_h - point[1]) * ppm)
 
     jobs = []
     for cell in pattern.cells:
-        base_layers = [LayerJob(n, round(rng.uniform(0, tile)), round(rng.uniform(0, tile)), rng.choice((1, -1)), rng.choice((0, 180)))
-                       for n in names]
+        base_layers = []
+        for kind, n in zip(kinds, names):
+            rng = streams[kind]
+            base_layers.append(LayerJob(n, round(rng.uniform(0, tile)), round(rng.uniform(0, tile)), rng.choice((1, -1)), rng.choice((0, 180))))
         for copy in pattern.wrapped_copies(cell):
             # the texture is anchored to the cell, so a wrapped copy carries its displacement
             shift_x = (copy.points[0][0] - cell.points[0][0]) * ppm
             shift_y = -(copy.points[0][1] - cell.points[0][1]) * ppm
             layers = [LayerJob(l.name, round(l.ox + shift_x), round(l.oy + shift_y), l.flip, l.rot180) for l in base_layers]
             jobs.append(CellJob([px(p) for p in copy.points], -cell.angle, layers))
-    plan = AtlasPlan(w_px, h_px, ppm, scale, jobs, mortar <= 0, names[0])
+    edge = pattern.edge_joint
+    plan = AtlasPlan(w_px, h_px, ppm, scale, jobs, edge or mortar <= 0, names[0], mortar * ppm if edge else 0.0)
     plan.repeats = (nx, ny)
     return plan
 
 
 # --------------------------------------------------------------------- GDI+ renderer
-def render_atlas(plan, joint_level=0.5, texture_dir=None):
-    """Return a System.Drawing.Bitmap (32bpp ARGB, opaque) for the plan. IronPython only."""
+def render_atlas(plan, joint_level=0.5, texture_dir=None, outline_px=0):
+    """Return a System.Drawing.Bitmap (32bpp ARGB, opaque) for the plan. IronPython only.
+
+    outline_px > 0 also draws every cell outline that wide in a dark line (preview aid only).
+    """
     import clr
 
     clr.AddReference("System.Drawing")
     from System import Array
-    from System.Drawing import Bitmap, Color, Graphics, GraphicsUnit, PointF, Rectangle, TextureBrush
-    from System.Drawing.Drawing2D import CompositingMode, InterpolationMode, Matrix, PixelOffsetMode, SmoothingMode, WrapMode
+    from System.Drawing import Bitmap, Color, Graphics, GraphicsUnit, Pen, PointF, Rectangle, TextureBrush
+    from System.Drawing.Drawing2D import CompositingMode, LineJoin, InterpolationMode, Matrix, PixelOffsetMode, SmoothingMode, WrapMode
     from System.Drawing.Imaging import PixelFormat
 
     texture_dir = texture_dir or TEXTURE_DIR
@@ -165,6 +177,18 @@ def render_atlas(plan, joint_level=0.5, texture_dir=None):
             g.InterpolationMode = InterpolationMode.NearestNeighbor if exact else InterpolationMode.HighQualityBilinear
             for layer in job.layers:
                 g.FillPolygon(brush_for(layer, job.angle_deg), pts)
+        g.InterpolationMode = InterpolationMode.HighQualityBilinear
+        passes = []
+        if plan.edge_joint_px > 0:
+            passes.append((plan.edge_joint_px, Color.FromArgb(255, level, level, level)))
+        if outline_px > 0:
+            passes.append((outline_px, Color.FromArgb(255, 40, 40, 40)))
+        for width, color in passes:
+            pen = Pen(color, width)
+            pen.LineJoin = LineJoin.Miter
+            for job in plan.jobs:
+                g.DrawPolygon(pen, Array[PointF]([PointF(x, y) for x, y in job.points_px]))
+            pen.Dispose()
     finally:
         g.Dispose()
         for b in brushes.values():

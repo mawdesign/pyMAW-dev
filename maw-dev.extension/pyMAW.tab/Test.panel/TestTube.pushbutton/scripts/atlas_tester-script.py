@@ -37,7 +37,7 @@ import texture_atlas
 
 PATH_SCRIPT = script.get_script_path()
 
-MATERIALS = [("brick", "Clay brick"), ("concrete", "Concrete")]
+MATERIALS = [("brick", "Clay brick"), ("concrete", "Concrete"), ("block", "Concrete block (vertical drag)")]
 
 
 class AtlasTester(Window):
@@ -57,6 +57,9 @@ class AtlasTester(Window):
         self.btnGenerate.Click += self.generate
         self.btnSave.Click += self.save_image
         self.last_bmp = None
+        self.last_plan = None
+        self.last_joint = 0.5
+        self.last_preview_outline = False
         self.ShowDialog()
 
     def pattern_changed(self, sender, args):
@@ -102,11 +105,15 @@ class AtlasTester(Window):
                 mortar=mortar,
                 min_size_mm=min_size,
             )
-            bmp = texture_atlas.render_atlas(plan, joint_level=self.sliderJoint.Value)
+            outline = 1 if self.chkOutline.IsChecked else 0
+            bmp = texture_atlas.render_atlas(plan, joint_level=self.sliderJoint.Value, outline_px=outline)
 
             if self.last_bmp is not None:
                 self.last_bmp.Dispose()
             self.last_bmp = bmp
+            self.last_plan = plan
+            self.last_joint = self.sliderJoint.Value
+            self.last_preview_outline = bool(outline)
 
             shown = bmp
             if self.chkTile.IsChecked:
@@ -153,7 +160,13 @@ class AtlasTester(Window):
         dialog.Filter = "PNG Files (.png)|*.png"
         if dialog.ShowDialog():
             try:
-                self.last_bmp.Save(dialog.FileName, ImageFormat.Png)
+                if self.last_preview_outline:
+                    # the preview outlines are an aid only; save the clean atlas
+                    clean = texture_atlas.render_atlas(self.last_plan, joint_level=self.last_joint)
+                    clean.Save(dialog.FileName, ImageFormat.Png)
+                    clean.Dispose()
+                else:
+                    self.last_bmp.Save(dialog.FileName, ImageFormat.Png)
                 self.statusText.Text = "Saved: {}".format(dialog.FileName)
             except Exception as e:
                 self.statusText.Text = "Save Error: {}".format(e)

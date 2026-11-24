@@ -32,7 +32,7 @@ def sheet(name):
     return _cache[name]
 
 
-def render(plan, joint_level=0.5, ss=3):
+def render(plan, joint_level=0.5, ss=3, outline_px=0):
     w, h = plan.width_px, plan.height_px
     out = np.full((h, w), joint_level, np.float32)
     base = sheet(plan.base_name)
@@ -81,6 +81,17 @@ def render(plan, joint_level=0.5, ss=3):
                 a = cov * sample(layer, 3, x0, x1, y0, y1, job.angle_deg)
             reg = out[y0:y1, x0:x1]
             out[y0:y1, x0:x1] = reg * (1 - a) + val * a
+
+    for width, value in ((plan.edge_joint_px, joint_level), (outline_px, 0.16)):
+        if width <= 0:
+            continue
+        m = Image.new("L", (w * ss, h * ss), 0)
+        d = ImageDraw.Draw(m)
+        for job in plan.jobs:
+            pts = [(x * ss, y * ss) for x, y in job.points_px]
+            d.line(pts + [pts[0], pts[1]], fill=255, width=max(1, int(round(width * ss))), joint="curve")
+        cov = np.asarray(m.resize((w, h), Image.BOX), dtype=np.float32) / 255.0
+        out = out * (1 - cov) + value * cov
     return out
 
 
@@ -99,6 +110,7 @@ def main():
     ap.add_argument("--joint", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--repeats", help="NXxNY whole bond repeats, e.g. 4x5 (default: at least 800 mm each way)")
+    ap.add_argument("--outline", type=float, default=0, help="preview outline width in px")
     ap.add_argument("--tile", action="store_true", help="also write a 2x2 tiled copy")
     a = ap.parse_args()
     extra = {"length": a.length} if a.length else {}
@@ -106,7 +118,7 @@ def main():
     mortar = a.mortar if a.mortar is not None else pc.load_catalog()[a.key].get("params", {}).get("mortar", 0)
     reps = tuple(int(v) for v in a.repeats.split("x")) if a.repeats else None
     plan = ta.plan_atlas(pat, a.material, a.pits, a.scratch, a.ppm, seed=a.seed, mortar=mortar, repeats=reps)
-    img = render(plan, a.joint)
+    img = render(plan, a.joint, outline_px=a.outline)
     Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8), "L").save(a.out)
     wmm, hmm = plan.size_mm
     print("%s: %s repeats, %dx%d px, Revit size %.2f x %.2f mm, %d cell draws" % (a.key, plan.repeats, plan.width_px, plan.height_px, wmm, hmm, len(plan.jobs)))

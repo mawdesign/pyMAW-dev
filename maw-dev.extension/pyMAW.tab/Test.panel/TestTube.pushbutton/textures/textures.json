@@ -2,6 +2,7 @@
   "size": 2048,
   "ppm": 2.0,
   "materials": [
+    "block",
     "brick",
     "concrete"
   ],

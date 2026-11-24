@@ -9,6 +9,9 @@
 #   repeat   [w, h] of the rectangular repeat, in world coordinates
 #   rotate   optional, degrees; cells are written axis-aligned and rotated about
 #            the origin by this angle (repeat stays in world coordinates)
+#   joint    edge = cells touch (no gap); a joint of width {mortar} is drawn centred
+#            on every cell edge, like the single line pattern. Omit when the cells
+#            already leave a gap of {mortar} between them.
 #   cells    list of cells:
 #              rect: [x, y, w, h]              axis-aligned rectangle
 #              poly: [[x, y], ...]             any polygon
@@ -65,6 +68,7 @@ FLEMISH:
 # Octagon and square tiles, no grout. {width} is the octagon across-flats size.
 OCTAGONS:
     name: Octagon and square tiles
+    joint: edge
     params: {width: 120, height: 120, mortar: 0}
     repeat: ["{width}", "{width}"]
     cells:
@@ -88,6 +92,7 @@ OCTAGONS:
 # {width} is board width, {length} is board length (block is length x length).
 BASKETWEAVE:
     name: Basketweave blocks at 45 degrees
+    joint: edge
     params: {width: 101.6, height: 0, mortar: 0, length: 609.6}
     rotate: 45
     repeat: ["sqrt(2)*{length}", "sqrt(2)*{length}"]
@@ -103,6 +108,7 @@ BASKETWEAVE:
 # Classic herringbone at 45 degrees.
 HERRINGBONE:
     name: Herringbone at 45 degrees
+    joint: edge
     params: {width: 101.6, height: 0, mortar: 0, length: 609.6}
     rotate: 45
     repeat: ["sqrt(2)*{length}", "sqrt(2)*{width}"]

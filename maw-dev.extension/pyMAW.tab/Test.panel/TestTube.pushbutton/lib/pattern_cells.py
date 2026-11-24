@@ -30,8 +30,9 @@ class Cell(object):
 
 
 class Pattern(object):
-    def __init__(self, name, repeat_w, repeat_h, cells):
+    def __init__(self, name, repeat_w, repeat_h, cells, edge_joint=False):
         self.name = name
+        self.edge_joint = edge_joint    # cells touch; a joint is drawn centred on their edges
         self.repeat_w = repeat_w
         self.repeat_h = repeat_h
         self.cells = cells
@@ -55,7 +56,7 @@ def tiled_pattern(pattern, nx, ny):
     for j in range(ny):
         for i in range(nx):
             cells.extend(c.moved(i * pattern.repeat_w, j * pattern.repeat_h) for c in pattern.cells)
-    return Pattern(pattern.name, pattern.repeat_w * nx, pattern.repeat_h * ny, cells)
+    return Pattern(pattern.name, pattern.repeat_w * nx, pattern.repeat_h * ny, cells, pattern.edge_joint)
 
 
 def repeats_for_size(pattern, min_w_mm=800.0, min_h_mm=800.0):
@@ -115,4 +116,4 @@ def build_pattern(key, width=None, height=None, mortar=None, catalog=None, **ext
             cells.append(Cell(pts, float(entry.get("angle", 0.0)) + rotate))
 
     rw, rh = [_num(v, params) for v in spec["repeat"]]
-    return Pattern(spec.get("name", key), rw, rh, cells)
+    return Pattern(spec.get("name", key), rw, rh, cells, spec.get("joint") == "edge")

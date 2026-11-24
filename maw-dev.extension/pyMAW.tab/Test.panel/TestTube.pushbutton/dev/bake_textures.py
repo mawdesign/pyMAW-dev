@@ -10,7 +10,7 @@ Writes into ../textures/ :
 Everything is wrap-around (FFT filtering, wrapped stamping) so each sheet tiles.
 Levels are nested: level 1 features are a subset of level 2, which are a subset of 3.
 
-Usage: python bake_textures.py [brick|concrete|all] [--size 2048] [--seed 7]
+Usage: python bake_textures.py [brick|concrete|block|all] [--size 2048] [--seed 7]
 """
 import argparse
 import json
@@ -92,11 +92,11 @@ def feature_factory(n, kind, spec):
             r = float(np.exp(rng.normal(np.log(spec["r_med"] * PPM), spec["r_sigma"])))
             r = float(np.clip(r, 0.6, spec["r_max"] * PPM))
             aspect = rng.uniform(1.0, spec["aspect"])
-            ang = rng.normal(0.0, 0.25) if spec["aligned"] else rng.uniform(0, np.pi)
+            ang = spec.get("angle0", 0.0) + rng.normal(0.0, 0.25) if spec["aligned"] else rng.uniform(0, np.pi)
             return cx, cy, pit_patch(r * aspect, r, ang, rng.uniform(*spec["depth"]))
         length = float(np.clip(np.exp(rng.normal(np.log(spec["len_med"] * PPM), 0.6)), 6, spec["len_max"] * PPM))
         width = rng.uniform(*spec["width"]) * PPM
-        ang = rng.normal(0.0, np.radians(spec["ang_sd"])) if spec["aligned"] else rng.uniform(0, np.pi)
+        ang = spec.get("angle0", 0.0) + rng.normal(0.0, np.radians(spec["ang_sd"])) if spec["aligned"] else rng.uniform(0, np.pi)
         return cx, cy, stroke_patch(length, width, ang, rng.uniform(*spec["depth"]), rng)
     return make
 
@@ -115,7 +115,16 @@ MATERIALS = {
         mean=0.66, std=0.055,
         pit=dict(r_med=0.9, r_sigma=0.55, r_max=3.0, aspect=1.3, aligned=False, depth=(0.35, 0.8)),
         pit_counts=[600, 2000, 6000],
-        scratch=dict(len_med=4.0, len_max=25.0, width=(0.3, 0.6), ang_sd=0.0, aligned=False, depth=(0.10, 0.35)),
+        scratch=dict(len_med=9.0, len_max=40.0, width=(0.4, 0.9), ang_sd=0.0, aligned=False, depth=(0.30, 0.70)),
+        scratch_counts=[300, 900, 2500],
+    ),
+    # concrete block: form-release drag runs vertically (texture angle 0 = horizontal, so 90 deg here)
+    "block": dict(
+        grain=[(0.7, 0.7, 0.55), (2.0, 2.0, 0.45), (1.0, 35.0, 0.55), (0.8, 12.0, 0.30), (30.0, 30.0, 0.25), (110.0, 110.0, 0.20)],
+        mean=0.66, std=0.06,
+        pit=dict(r_med=0.9, r_sigma=0.55, r_max=3.0, aspect=2.0, aligned=True, angle0=np.pi / 2, depth=(0.35, 0.8)),
+        pit_counts=[600, 2000, 6000],
+        scratch=dict(len_med=18.0, len_max=90.0, width=(0.4, 1.0), ang_sd=1.5, aligned=True, angle0=np.pi / 2, depth=(0.25, 0.65)),
         scratch_counts=[300, 900, 2500],
     ),
 }
@@ -148,8 +157,8 @@ def main():
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    for i, m in enumerate(MATERIALS if a.material == "all" else [a.material]):
-        bake(m, a.size, a.seed + i * 101, a.out)
+    for m in (list(MATERIALS) if a.material == "all" else [a.material]):
+        bake(m, a.size, a.seed + list(MATERIALS).index(m) * 101, a.out)
     with open(os.path.join(a.out, "textures.json"), "w") as fh:
         json.dump({"size": a.size, "ppm": PPM, "materials": sorted(MATERIALS), "levels": 3}, fh, indent=2)
 
