@@ -93,6 +93,7 @@ OCTAGONS:
 BASKETWEAVE:
     name: Basketweave blocks at 45 degrees
     joint: edge
+    snap_length: true   # {length} is rounded to a whole number of boards
     params: {width: 101.6, height: 0, mortar: 0, length: 609.6}
     rotate: 45
     repeat: ["sqrt(2)*{length}", "sqrt(2)*{length}"]

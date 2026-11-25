@@ -96,6 +96,10 @@ def build_pattern(key, width=None, height=None, mortar=None, catalog=None, **ext
     for k, v in extra.items():
         params[k] = float(v)
 
+    if spec.get("snap_length") and params.get("width", 0) > 0:
+        # blocks must hold a whole number of boards or they stop tiling
+        params["length"] = max(1, int(round(params["length"] / params["width"]))) * params["width"]
+
     rotate = float(spec.get("rotate", 0.0))
     cos_r = math.cos(math.radians(rotate))
     sin_r = math.sin(math.radians(rotate))

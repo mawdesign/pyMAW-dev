@@ -115,17 +115,27 @@ class AtlasTester(Window):
             self.last_joint = self.sliderJoint.Value
             self.last_preview_outline = bool(outline)
 
-            shown = bmp
+            base = bmp
+            if self.chkColour.IsChecked:
+                rgb = self.parse_colour(self.txtColour.Text)
+                if rgb is None:
+                    self.statusText.Text = "Colour must be hex like #A8553A"
+                    return
+                base = texture_atlas.shade_preview(bmp, rgb, self.sliderBump.Value)
+
+            shown = base
             if self.chkTile.IsChecked:
-                shown = Bitmap(bmp.Width * 2, bmp.Height * 2, PixelFormat.Format32bppArgb)
+                shown = Bitmap(base.Width * 2, base.Height * 2, PixelFormat.Format32bppArgb)
                 g = Graphics.FromImage(shown)
                 for ty in (0, 1):
                     for tx in (0, 1):
-                        g.DrawImage(bmp, tx * bmp.Width, ty * bmp.Height, bmp.Width, bmp.Height)
+                        g.DrawImage(base, tx * base.Width, ty * base.Height, base.Width, base.Height)
                 g.Dispose()
             self.show_bitmap(shown)
-            if shown is not bmp:
+            if shown is not base:
                 shown.Dispose()
+            if base is not bmp:
+                base.Dispose()
 
             width_mm, height_mm = plan.size_mm
             self.sizeText.Text = "Revit bump size: {:.2f} x {:.2f} mm".format(width_mm, height_mm)
@@ -136,6 +146,16 @@ class AtlasTester(Window):
         except Exception as e:
             self.statusText.Text = "Error: {}".format(e)
             print(traceback.format_exc())
+
+    @staticmethod
+    def parse_colour(text):
+        text = text.strip().lstrip("#")
+        if len(text) != 6:
+            return None
+        try:
+            return [int(text[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
+        except ValueError:
+            return None
 
     def show_bitmap(self, bmp):
         ms = MemoryStream()

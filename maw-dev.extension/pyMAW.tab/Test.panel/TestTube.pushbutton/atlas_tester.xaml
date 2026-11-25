@@ -75,6 +75,12 @@
             </StackPanel>
 
             <CheckBox Name="chkOutline" Content="Preview 1 px cell outlines (not saved)" Foreground="White" Margin="0,12,0,0" IsChecked="True"/>
+            <CheckBox Name="chkColour" Content="Preview on colour (hex) - not saved" Foreground="White" Margin="0,12,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBox Name="txtColour" Text="#A8553A" Width="80"/>
+                <Label Content="bump strength" Margin="10,0,0,0"/>
+                <Slider Name="sliderBump" Minimum="0" Maximum="1" Value="0.4" Width="90" VerticalAlignment="Center"/>
+            </StackPanel>
             <CheckBox Name="chkTile" Content="Preview 2 x 2 tiled (check seams)" Foreground="White" Margin="0,12,0,0"/>
 
             <Button Name="btnGenerate" Content="GENERATE" Height="40" Margin="0,18,0,0" FontWeight="Bold" Background="#007ACC" Foreground="White"/>

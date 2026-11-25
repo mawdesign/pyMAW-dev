@@ -196,3 +196,70 @@ def render_atlas(plan, joint_level=0.5, texture_dir=None, outline_px=0):
         for s in sheets.values():
             s.Dispose()
     return bmp
+
+
+# --------------------------------------------------------------------- colour preview
+def shade_preview(bump, rgb, strength=0.4):
+    """Approximate how the bump map looks on a surface of colour rgb (0-1 each). IronPython only.
+
+    Not the Revit renderer: a relief shade lit from the top left, built from GDI+
+    draws with colour matrices (no per-pixel loops). The result wraps at the edges,
+    so tiling it shows the same seams as the bump map. Returns a new Bitmap.
+    """
+    import clr
+
+    clr.AddReference("System.Drawing")
+    from System import Array, Single
+    from System.Drawing import Bitmap, Graphics, GraphicsUnit, Rectangle
+    from System.Drawing.Drawing2D import CompositingMode, InterpolationMode, PixelOffsetMode
+    from System.Drawing.Imaging import ColorMatrix, ImageAttributes, PixelFormat
+
+    w, h = bump.Width, bump.Height
+
+    def attrs(diag, offset=(0, 0, 0), alpha=1.0):
+        rows = [[diag[0], 0, 0, 0, 0], [0, diag[1], 0, 0, 0], [0, 0, diag[2], 0, 0], [0, 0, 0, alpha, 0],
+                [offset[0], offset[1], offset[2], 0, 1]]
+        matrix = ColorMatrix(Array[Array[Single]]([Array[Single]([float(v) for v in row]) for row in rows]))
+        ia = ImageAttributes()
+        ia.SetColorMatrix(matrix)
+        return ia
+
+    def draw(g, image, ia, dx=0, dy=0):
+        g.DrawImage(image, Rectangle(dx, dy, w, h), 0, 0, w, h, GraphicsUnit.Pixel, ia)
+
+    def canvas():
+        bmp = Bitmap(w, h, PixelFormat.Format32bppArgb)
+        g = Graphics.FromImage(bmp)
+        g.InterpolationMode = InterpolationMode.NearestNeighbor
+        g.PixelOffsetMode = PixelOffsetMode.Half
+        return bmp, g
+
+    # d = 0.5 + 0.5 * (height - height shifted by one pixel down-right), wrapped
+    d, g = canvas()
+    g.CompositingMode = CompositingMode.SourceCopy
+    draw(g, bump, attrs((1, 1, 1)))
+    g.CompositingMode = CompositingMode.SourceOver
+    inverted = attrs((-1, -1, -1), (1, 1, 1), 0.5)
+    for dx, dy in ((1, 1), (1 - w, 1), (1, 1 - h), (1 - w, 1 - h)):
+        draw(g, bump, inverted, dx, dy)
+    g.Dispose()
+
+    # e = 0.5 + k * (d - 0.5): stretch the relief
+    k = 1.0 + 24.0 * strength
+    e, g = canvas()
+    g.CompositingMode = CompositingMode.SourceCopy
+    draw(g, d, attrs((k, k, k), (0.5 * (1 - k),) * 3))
+    # shade = 0.7 e + 0.3 height, so pits and joints also darken
+    g.CompositingMode = CompositingMode.SourceOver
+    draw(g, bump, attrs((1, 1, 1), alpha=0.3))
+    g.Dispose()
+    d.Dispose()
+
+    # tint: flat areas (shade about 0.55) come out as the chosen colour
+    gain = 1.0 / 0.55
+    out, g = canvas()
+    g.CompositingMode = CompositingMode.SourceCopy
+    draw(g, e, attrs((rgb[0] * gain, rgb[1] * gain, rgb[2] * gain)))
+    g.Dispose()
+    e.Dispose()
+    return out

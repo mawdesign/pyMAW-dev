@@ -95,6 +95,17 @@ def render(plan, joint_level=0.5, ss=3, outline_px=0):
     return out
 
 
+def shade(h, rgb, strength=0.5):
+    """numpy twin of texture_atlas.shade_preview (same GDI+-style steps)."""
+    hs = np.pad(h, ((1, 0), (1, 0)), mode="edge")[:-1, :-1]          # image shifted by (+1, +1)
+    d = 0.5 * h + 0.5 * (1 - hs)                                       # 0.5 + 0.5 (h - hs)
+    k = 1.0 + 24.0 * strength
+    e = np.clip(0.5 + k * (d - 0.5), 0, 1)
+    sh = 0.7 * e + 0.3 * h
+    gain = 1.0 / 0.55
+    return np.clip(sh[..., None] * np.array(rgb, np.float32) * gain, 0, 1)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("key")
@@ -111,6 +122,8 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--repeats", help="NXxNY whole bond repeats, e.g. 4x5 (default: at least 800 mm each way)")
     ap.add_argument("--outline", type=float, default=0, help="preview outline width in px")
+    ap.add_argument("--colour", help="hex, writes a shaded colour preview too")
+    ap.add_argument("--strength", type=float, default=0.5)
     ap.add_argument("--tile", action="store_true", help="also write a 2x2 tiled copy")
     a = ap.parse_args()
     extra = {"length": a.length} if a.length else {}
@@ -120,6 +133,11 @@ def main():
     plan = ta.plan_atlas(pat, a.material, a.pits, a.scratch, a.ppm, seed=a.seed, mortar=mortar, repeats=reps)
     img = render(plan, a.joint, outline_px=a.outline)
     Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8), "L").save(a.out)
+    if a.colour:
+        c = a.colour.lstrip("#")
+        rgb = [int(c[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
+        col = shade(img, rgb, a.strength)
+        Image.fromarray((col * 255 + 0.5).astype(np.uint8), "RGB").save(a.out.replace(".png", "_colour.png"))
     wmm, hmm = plan.size_mm
     print("%s: %s repeats, %dx%d px, Revit size %.2f x %.2f mm, %d cell draws" % (a.key, plan.repeats, plan.width_px, plan.height_px, wmm, hmm, len(plan.jobs)))
     if a.tile:
