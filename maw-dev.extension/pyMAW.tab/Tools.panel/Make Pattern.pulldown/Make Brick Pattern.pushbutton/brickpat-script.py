@@ -9,14 +9,17 @@ from pyrevit.coreutils import yaml
 
 # Import Shared Config/Material Libraries
 import pattern_utils
+import brick_texture
+import texture_editor
 
 # .NET Imports
 import clr
 
 clr.AddReference("System")
-from System.Windows import Window
+from System.Windows import Window, Visibility
 from System import Uri
 from System.Windows.Media.Imaging import BitmapImage
+from System.Drawing.Imaging import ImageFormat
 
 # --- Script/Config Paths ---
 PATH_SCRIPT = script.get_script_path()
@@ -178,6 +181,8 @@ def do_math(text):
 
 
 class BrickForm(Window):
+    _ready = False  # the XAML fires events while it loads, before the form is set up
+
     def __init__(self, settings):
         # Initialize the defaults
         self.settings = settings
@@ -188,30 +193,11 @@ class BrickForm(Window):
         path_xaml_file = os.path.join(PATH_SCRIPT, "brickpat.xaml")
         wpf.LoadComponent(self, path_xaml_file)
 
-        # Load material colors from pyRevit config
-        brick_color_ini = CONFIG.get_option("BrickColor", "not set")
-        if brick_color_ini != "not set":
-            self.brick_color = pattern_utils.db_color_from_hex(brick_color_ini)
-        else:
-            self.brick_color = pattern_utils.db_color_from_hex(
-                "#91412F"
-            )  # Default brick red
-
-        mortar_color_ini = CONFIG.get_option("MortarColor", "not set")
-        if mortar_color_ini != "not set":
-            self.mortar_color = pattern_utils.db_color_from_hex(mortar_color_ini)
-        else:
-            self.mortar_color = pattern_utils.db_color_from_hex(
-                "#ECECEC"
-            )  # Default light gray
-
-        # Set color swatch backgrounds
-        self.BrickColorSwatch.Background = pattern_utils.db_color_to_wpf_brush(
-            self.brick_color
-        )
-        self.MortarColorSwatch.Background = pattern_utils.db_color_to_wpf_brush(
-            self.mortar_color
-        )
+        # Texture and colour settings from the pyRevit config (edited in the texture editor)
+        self.tex = brick_texture.TextureSettings.load(CONFIG)
+        self.is_tile = False
+        self._thumb_key = None
+        self._sync_colours()
 
         # Load thumbnails
         self.ImagePalette.ItemsSource = self.get_image_thumbnails()
@@ -232,8 +218,10 @@ class BrickForm(Window):
         self.MetricRadioButton.IsChecked = self.unit_is_metric
         self.ImperialRadioButton.IsChecked = not self.unit_is_metric
         self._update_ui_for_units()
+        self.update_output_state()
 
         # Show Form
+        self._ready = True
         self.ShowDialog()
 
     def get_image_thumbnails(self):
@@ -250,6 +238,80 @@ class BrickForm(Window):
         ]
         return thumbs
 
+    def _sync_colours(self):
+        """DB colours for the material, from the hex colours in the texture settings."""
+        self.brick_color = pattern_utils.db_color_from_hex(self.tex.brick_hex)
+        self.mortar_color = pattern_utils.db_color_from_hex(self.tex.mortar_hex)
+
+    def update_output_state(self):
+        """Apply Texture only means something when a bump or normal map is being made."""
+        self.CheckApplyTexture.IsEnabled = bool(
+            self.CheckNormal.IsChecked or self.CheckBump.IsChecked
+        )
+
+    def apply_texture(self):
+        return bool(self.CheckApplyTexture.IsChecked and self.CheckApplyTexture.IsEnabled)
+
+    def dims_mm(self):
+        """(width, height, joint) in mm from the inputs, or None if any is not a valid dimension."""
+        mm = []
+        for box in (self.WidthInput, self.HeightInput, self.JointSizeInput):
+            _, internal = pattern_utils.dim_from_string(
+                box.Text, bool(self.MetricRadioButton.IsChecked)
+            )
+            if internal is None:
+                return None
+            mm.append(internal * brick_texture.MM_PER_FOOT)
+        return mm
+
+    def texture_pattern(self):
+        """(cell pattern, joint mm) for the selected pattern and sizes; (None, reason) if not available."""
+        if not self.selected_pattern_name:
+            return None, "Select a pattern"
+        entry = self.settings.get(self.selected_pattern_name)
+        if not brick_texture.has_cells(self.selected_pattern_name, entry):
+            return None, "No texture cells for this pattern"
+        dims = self.dims_mm()
+        if dims is None:
+            return None, "Check the dimensions"
+        return brick_texture.cell_pattern(self.selected_pattern_name, entry, *dims), dims[2]
+
+    def refresh_thumbnail(self):
+        """Redraw the lit colour thumbnail for the current pattern, sizes, texture and colours."""
+        if not self._ready:
+            return
+        key = (
+            self.selected_pattern_name,
+            self.WidthInput.Text,
+            self.HeightInput.Text,
+            self.JointSizeInput.Text,
+            bool(self.MetricRadioButton.IsChecked),
+            self.apply_texture(),
+            tuple(sorted(self.tex.__dict__.items())),
+        )
+        if key == self._thumb_key:
+            return
+        self._thumb_key = key
+        try:
+            pattern, mortar_mm = self.texture_pattern()
+            if pattern is None:
+                self.TexturePreview.Source = None
+                self.TexturePlaceholder.Text = mortar_mm
+                self.TexturePlaceholder.Visibility = Visibility.Visible
+                return
+            bmp = brick_texture.render_thumbnail(
+                pattern, self.tex, self.apply_texture(), mortar_mm
+            )
+            self.TexturePreview.Source = brick_texture.to_wpf_image(bmp)
+            bmp.Dispose()
+            self.TexturePlaceholder.Visibility = Visibility.Collapsed
+        except Exception as ex:
+            self._thumb_key = None
+            self.TexturePreview.Source = None
+            self.TexturePlaceholder.Text = "Preview failed"
+            self.TexturePlaceholder.Visibility = Visibility.Visible
+            print("Thumbnail error: " + str(ex))
+
     def _update_ui_for_units(self):
         """Updates UI text and default values based on unit system."""
         global IS_METRIC
@@ -263,6 +325,7 @@ class BrickForm(Window):
         self.WidthInput.Text = "230" if IS_METRIC else "9"
         self.DepthInput.Text = "70" if IS_METRIC else "2.75"
         self.JointSizeInput.Text = "10" if IS_METRIC else "0.375"
+        self.refresh_thumbnail()
 
     # --- Events ---
     def Thumbnail_MouseLeftButtonDown(self, sender, e):
@@ -282,48 +345,44 @@ class BrickForm(Window):
         self.SelectedDescription.Text = pattern_data["description"]
 
         # Update terminology (Brick vs Tile)
-        if pattern_data.get("type") == "tile":
-            self.BrickColorLabel.Text = "Tile Colour:"
-            self.MortarColorLabel.Text = "Grout Joint Colour:"
-            self.BrickDims.Source = self.tile_diagram
-        else:
-            self.BrickColorLabel.Text = "Brick Face Colour:"
-            self.MortarColorLabel.Text = "Mortar Joint Colour:"
-            self.BrickDims.Source = self.brick_diagram
+        self.is_tile = pattern_data.get("type") == "tile"
+        self.BrickDims.Source = self.tile_diagram if self.is_tile else self.brick_diagram
+        self.refresh_thumbnail()
 
     def Unit_Changed(self, sender, e):
         """Fires when Metric or Imperial radio buttons are clicked."""
         self._update_ui_for_units()
 
-    def SelectBrickColor_Click(self, sender, e):
-        """Fires when the brick/tile color swatch is clicked."""
-        new_color = forms.ask_for_color(default="#FF91412F")
-        if new_color:
-            db_color = pattern_utils.db_color_from_hex(new_color)
-            if db_color and db_color.IsValid:
-                self.brick_color = db_color
-                # Update the swatch background
-                self.BrickColorSwatch.Background = pattern_utils.db_color_to_wpf_brush(
-                    db_color
-                )
-                # Save to config
-                CONFIG.set_option("BrickColor", "#" + new_color[-6:])
-                script.save_config()
+    def Output_Changed(self, sender, e):
+        """Fires when an output checkbox changes."""
+        if not self._ready:
+            return
+        self.update_output_state()
+        self.refresh_thumbnail()
 
-    def SelectMortarColor_Click(self, sender, e):
-        """Fires when the mortar/grout color swatch is clicked."""
-        new_color = forms.ask_for_color(default="#FFECECEC")
-        if new_color:
-            db_color = pattern_utils.db_color_from_hex(new_color)
-            if db_color and db_color.IsValid:
-                self.mortar_color = db_color
-                # Update the swatch background
-                self.MortarColorSwatch.Background = pattern_utils.db_color_to_wpf_brush(
-                    db_color
-                )
-                # Save to config
-                CONFIG.set_option("MortarColor", "#" + new_color[-6:])
-                script.save_config()
+    def Dims_Changed(self, sender, e):
+        """Fires when a dimension box loses focus."""
+        self.refresh_thumbnail()
+
+    def TexturePreview_Click(self, sender, e):
+        """Opens the texture editor for the selected pattern and sizes."""
+        try:
+            pattern, mortar_mm = self.texture_pattern()
+        except Exception as ex:
+            forms.alert("Could not build the pattern cells:\n" + str(ex), title="Texture")
+            return
+        if pattern is None:
+            forms.alert(mortar_mm + ".", title="Texture")
+            return
+        editor = texture_editor.TextureEditor(
+            pattern, mortar_mm, self.tex, self.apply_texture(), self.is_tile
+        )
+        if editor.show():
+            self.tex = editor.settings
+            self._sync_colours()
+            self.tex.save(CONFIG)
+            script.save_config()
+            self.refresh_thumbnail()
 
     def GenerateButton_Click(self, sender, e):
         """Handles the generate button click event."""
@@ -346,6 +405,7 @@ class BrickForm(Window):
         self.gen_pattern = self.CheckPattern.IsChecked
         self.gen_fillregion = self.CheckFillRegion.IsChecked
         self.gen_material = self.CheckMaterial.IsChecked
+        self.gen_apply_texture = self.apply_texture()
 
         # Check unit selection and save if it changed
         if (
@@ -367,6 +427,41 @@ class BrickThumb(object):
         self.PatternName = thumb["Name"]
         self.ToolTip = thumb["ToolTip"]
         self.Thumbnail = BitmapImage(Uri(thumb["Thumbnail"]))
+
+
+# --- Texture output ---
+
+
+def save_bump_map(ui, entry, name_base, dims_internal):
+    """Render the bump map atlas for the selected pattern and save it as a PNG."""
+    if not brick_texture.has_cells(ui.selected_pattern_name, entry):
+        forms.alert(
+            "This pattern has no texture cell definition yet, so no bump map was made.",
+            title="Bump Map",
+        )
+        return
+    w_mm, h_mm, m_mm = [d * brick_texture.MM_PER_FOOT for d in dims_internal]
+    pattern = brick_texture.cell_pattern(ui.selected_pattern_name, entry, w_mm, h_mm, m_mm)
+    plan = brick_texture.make_plan(pattern, ui.tex, ui.gen_apply_texture, m_mm)
+
+    size_w, size_h = plan.size_mm
+    if not IS_METRIC:
+        size_w, size_h = size_w / 25.4, size_h / 25.4
+    size_name = "{:g}x{:g}{}".format(round(size_w, 2), round(size_h, 2), "mm" if IS_METRIC else "in")
+    path = forms.save_file(
+        file_ext="png",
+        default_name="{}_bump-{}".format(name_base, size_name),
+        title="Save bump map",
+    )
+    if not path:
+        return
+    bump = brick_texture.render_bump(plan, ui.tex)
+    try:
+        bump.Save(path, ImageFormat.Png)
+    finally:
+        bump.Dispose()
+    print("Bump map saved: {}".format(path))
+    print("Enter {} as the bump map size in the Revit material.".format(size_name))
 
 
 # --- Main execution ---
@@ -451,18 +546,22 @@ def make_brick_pattern():
                     # success, fr_reason = pattern_utils.create_filled_region_type(...)
                     pass
 
-            if ui.gen_normal or ui.gen_bump:
-                # TODO: Get save path from user
-                print("TODO: Ask for save path for images")
-                # save_path = forms.save_file(...)
+            if ui.gen_bump:
+                save_bump_map(
+                    ui,
+                    selected_pattern,
+                    "{}_{}x{}x{}".format(
+                        ui.selected_pattern_name,
+                        brick_values["width"],
+                        brick_values["height"],
+                        brick_values["mortar"],
+                    ),
+                    [w_int, h_int, m_int],
+                )
 
-                if ui.gen_bump:
-                    # TODO: Call bump map generator
-                    print("TODO: Generate Bump Map")
-
-                if ui.gen_normal:
-                    # TODO: Call normal map generator
-                    print("TODO: Generate Normal Map")
+            if ui.gen_normal:
+                # TODO: Call normal map generator (same atlas as the bump map)
+                print("TODO: Generate Normal Map")
 
             if ui.gen_material:
                 # TODO: Create material

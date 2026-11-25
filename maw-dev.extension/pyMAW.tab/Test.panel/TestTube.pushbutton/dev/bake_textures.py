@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Dev tool (CPython 3 + numpy + Pillow): bake seamless bump-map sheets.
 
-Writes into ../textures/ :
+Writes into Tools.panel/Make Pattern.pulldown/lib/textures/ :
     <material>_base.png          8-bit grey, opaque, seamless
     <material>_pits_<1-3>.png    black + alpha (depth), seamless, nested levels
     <material>_scratch_<1-3>.png black + alpha (depth), seamless, nested levels
@@ -20,7 +20,7 @@ import numpy as np
 from PIL import Image
 
 PPM = 2.0  # sheet pixels per millimetre
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "textures")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "Tools.panel", "Make Pattern.pulldown", "lib", "textures")
 
 
 # ------------------------------------------------------------------ filters

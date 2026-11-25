@@ -85,6 +85,11 @@ def _num(value, params):
     return float(eval(text, {"__builtins__": {}}, _EVAL_NAMES))
 
 
+def evaluate(value, params):
+    """Evaluate a number or an expression string such as '{width}*6' using params (mm)."""
+    return _num(value, dict((k, float(v)) for k, v in params.items()))
+
+
 def build_pattern(key, width=None, height=None, mortar=None, catalog=None, **extra):
     """Evaluate the catalog entry `key` with the given dimensions (mm)."""
     catalog = catalog or load_catalog()

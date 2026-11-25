@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw
 from scipy.ndimage import map_coordinates
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LIB = os.path.join(os.path.dirname(HERE), "lib")
+LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "Tools.panel", "Make Pattern.pulldown", "lib")
 sys.path.insert(0, LIB)
 
 import pattern_cells as pc  # noqa: E402
@@ -53,7 +53,10 @@ def render(plan, joint_level=0.5, ss=3, outline_px=0):
         arr = arr if arr.ndim == 2 else arr[..., ch]
         return map_coordinates(arr, [v - 0.5, u - 0.5], order=1, mode="grid-wrap")
 
-    if plan.fill_background_with_base:
+    flat = plan.flat_level is not None
+    if plan.fill_background_with_base and flat:
+        out[:] = plan.flat_level
+    elif plan.fill_background_with_base:
         class L:  # whole-atlas base fill
             ox = oy = 0.0
             flip = 1
@@ -72,6 +75,9 @@ def render(plan, joint_level=0.5, ss=3, outline_px=0):
         m = Image.new("L", (bw * ss, bh * ss), 0)
         ImageDraw.Draw(m).polygon([((x - x0) * ss, (y - y0) * ss) for x, y in job.points_px], fill=255)
         cov = np.asarray(m.resize((bw, bh), Image.BOX), dtype=np.float32) / 255.0
+        if flat:
+            reg = out[y0:y1, x0:x1]
+            out[y0:y1, x0:x1] = reg * (1 - cov) + plan.flat_level * cov
         for layer in job.layers:
             if "base" in layer.name:
                 val = sample(layer, 0, x0, x1, y0, y1, job.angle_deg)
@@ -95,15 +101,40 @@ def render(plan, joint_level=0.5, ss=3, outline_px=0):
     return out
 
 
-def shade(h, rgb, strength=0.5):
-    """numpy twin of texture_atlas.shade_preview (same GDI+-style steps)."""
-    hs = np.pad(h, ((1, 0), (1, 0)), mode="edge")[:-1, :-1]          # image shifted by (+1, +1)
+S0 = 0.525         # shade of flat brick face; keep in step with texture_atlas.SHADE_FLAT
+DARK_GAIN, LIGHT_GAIN = 2.5, 2.0
+
+
+def colour_map(plan, brick_rgb, mortar_rgb, ss=3):
+    """Flat colours: mortar everywhere, brick colour inside the cells (edge joints in mortar)."""
+    w, h = plan.width_px, plan.height_px
+    m = Image.new("L", (w * ss, h * ss), 0)
+    d = ImageDraw.Draw(m)
+    for job in plan.jobs:
+        d.polygon([(x * ss, y * ss) for x, y in job.points_px], fill=255)
+    if plan.edge_joint_px > 0:
+        m2 = Image.new("L", (w * ss, h * ss), 0)
+        d2 = ImageDraw.Draw(m2)
+        for job in plan.jobs:
+            pts = [(x * ss, y * ss) for x, y in job.points_px]
+            d2.line(pts + [pts[0], pts[1]], fill=255, width=max(1, int(round(plan.edge_joint_px * ss))), joint="curve")
+        m = Image.fromarray(np.where(np.asarray(m2) > 0, 0, np.asarray(m)).astype(np.uint8))
+    cov = np.asarray(m.resize((w, h), Image.BOX), dtype=np.float32)[..., None] / 255.0
+    return cov * np.array(brick_rgb, np.float32) + (1 - cov) * np.array(mortar_rgb, np.float32)
+
+
+def shade(h, plan, brick_rgb, mortar_rgb, strength=0.2):
+    """numpy twin of texture_atlas.render_colour_preview (same steps as the GDI+ draws)."""
+    hs = np.roll(np.roll(h, 1, 0), 1, 1)                               # shifted (+1, +1), wrapped
     d = 0.5 * h + 0.5 * (1 - hs)                                       # 0.5 + 0.5 (h - hs)
     k = 1.0 + 24.0 * strength
     e = np.clip(0.5 + k * (d - 0.5), 0, 1)
-    sh = 0.7 * e + 0.3 * h
-    gain = 1.0 / 0.55
-    return np.clip(sh[..., None] * np.array(rgb, np.float32) * gain, 0, 1)
+    sh = 0.8 * e + 0.2 * h
+    c = colour_map(plan, brick_rgb, mortar_rgb)
+    dark = np.clip(DARK_GAIN * (S0 - sh), 0, 1)[..., None]             # black overlay
+    c = c * (1 - dark)
+    light = np.clip(LIGHT_GAIN * (sh - S0), 0, 1)[..., None]           # white overlay
+    return np.clip(c * (1 - light) + light, 0, 1)
 
 
 def main():
@@ -123,7 +154,8 @@ def main():
     ap.add_argument("--repeats", help="NXxNY whole bond repeats, e.g. 4x5 (default: at least 800 mm each way)")
     ap.add_argument("--outline", type=float, default=0, help="preview outline width in px")
     ap.add_argument("--colour", help="hex, writes a shaded colour preview too")
-    ap.add_argument("--strength", type=float, default=0.5)
+    ap.add_argument("--mortar-colour", default="#ECECEC")
+    ap.add_argument("--strength", type=float, default=0.2)
     ap.add_argument("--tile", action="store_true", help="also write a 2x2 tiled copy")
     a = ap.parse_args()
     extra = {"length": a.length} if a.length else {}
@@ -136,7 +168,8 @@ def main():
     if a.colour:
         c = a.colour.lstrip("#")
         rgb = [int(c[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
-        col = shade(img, rgb, a.strength)
+        mort = [int(a.mortar_colour.lstrip('#')[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
+        col = shade(img, plan, rgb, mort, a.strength)
         Image.fromarray((col * 255 + 0.5).astype(np.uint8), "RGB").save(a.out.replace(".png", "_colour.png"))
     wmm, hmm = plan.size_mm
     print("%s: %s repeats, %dx%d px, Revit size %.2f x %.2f mm, %d cell draws" % (a.key, plan.repeats, plan.width_px, plan.height_px, wmm, hmm, len(plan.jobs)))

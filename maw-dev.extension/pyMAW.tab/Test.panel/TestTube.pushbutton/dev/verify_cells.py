@@ -17,7 +17,7 @@ from shapely.ops import unary_union
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "Tools.panel", "Make Pattern.pulldown", "lib"))
 
 import pat_faces as pf  # noqa: E402
 import pattern_cells as pc  # noqa: E402

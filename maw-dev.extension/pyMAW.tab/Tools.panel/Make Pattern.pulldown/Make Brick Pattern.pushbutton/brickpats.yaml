@@ -2,6 +2,15 @@
 # pattern line format:
 # angle, origin x, origin y, shift parallel, shift perpendicual, pen down, -pen up, ... more pen up and down
 # https://revitcat.blogspot.com/2015/06/defining-revit-custom-hatch-patterns.html
+#
+# Texture (bump map) cells, optional per pattern. The cell outlines live in
+# lib/pattern_cells.yaml; by default a pattern uses the entry of its own name
+# without any _SL suffix (ENGLISH_SL -> ENGLISH). To override:
+#   cells: BASKETWEAVE                  entry in lib/pattern_cells.yaml
+#   cells_args: {width: "{height}", length: "{width}"}
+#                                       extra values for the cells, as expressions in the
+#                                       dialog's {width} {height} {mortar} (mm), e.g. board
+#                                       width and block length for basketweave / herringbone
 ENGLISH:
     name: English bond with mortar joints
     type: brick

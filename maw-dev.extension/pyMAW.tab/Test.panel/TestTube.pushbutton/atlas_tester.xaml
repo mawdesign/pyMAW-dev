@@ -79,7 +79,7 @@
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBox Name="txtColour" Text="#A8553A" Width="80"/>
                 <Label Content="bump strength" Margin="10,0,0,0"/>
-                <Slider Name="sliderBump" Minimum="0" Maximum="1" Value="0.4" Width="90" VerticalAlignment="Center"/>
+                <Slider Name="sliderBump" Minimum="0" Maximum="1" Value="0.2" Width="90" VerticalAlignment="Center"/>
             </StackPanel>
             <CheckBox Name="chkTile" Content="Preview 2 x 2 tiled (check seams)" Foreground="White" Margin="0,12,0,0"/>
 

@@ -82,13 +82,13 @@
 
                 <!-- Column 2: Inputs -->
                 <TextBlock Grid.Column="1" Grid.Row="0" Text="Height:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                <TextBox Name="HeightInput" Grid.Column="2" Grid.Row="0" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text=""/>
+                <TextBox Name="HeightInput" LostFocus="Dims_Changed" Grid.Column="2" Grid.Row="0" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text=""/>
                 <TextBlock Grid.Column="1" Grid.Row="1" Text="Width:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                <TextBox Name="WidthInput" Grid.Column="2" Grid.Row="1" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text=""/>
+                <TextBox Name="WidthInput" LostFocus="Dims_Changed" Grid.Column="2" Grid.Row="1" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text=""/>
                 <TextBlock Grid.Column="1" Grid.Row="2" Text="Depth:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                <TextBox Name="DepthInput" Grid.Column="2" Grid.Row="2" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text="" />
+                <TextBox Name="DepthInput" LostFocus="Dims_Changed" Grid.Column="2" Grid.Row="2" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text="" />
                 <TextBlock Grid.Column="1" Grid.Row="3" Text="Joint Size:" Margin="5,0,5,8" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                <TextBox Name="JointSizeInput" Grid.Column="2" Grid.Row="3" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text="" />
+                <TextBox Name="JointSizeInput" LostFocus="Dims_Changed" Grid.Column="2" Grid.Row="3" Width="80" Margin="5,0,5,8" HorizontalAlignment="Left" Text="" />
 
             </Grid>
         </GroupBox>
@@ -102,47 +102,30 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Grid.Row="0" Margin="10">
-                    <CheckBox Name="CheckNormal" Content="Generate Normal Map" IsChecked="True" Margin="0,0,0,8" />
-                    <CheckBox Name="CheckBump" Content="Generate Bump Map" IsChecked="True" Margin="0,0,0,8" />
+                    <CheckBox Name="CheckNormal" Content="Generate Normal Map" IsChecked="True" Margin="0,0,0,8" Checked="Output_Changed" Unchecked="Output_Changed" />
+                    <CheckBox Name="CheckBump" Content="Generate Bump Map" IsChecked="True" Margin="0,0,0,8" Checked="Output_Changed" Unchecked="Output_Changed" />
+                    <CheckBox Name="CheckApplyTexture" Content="Apply Texture" IsChecked="True" Margin="20,0,0,8"
+                              ToolTip="Add the pit, scratch and grain texture to the maps. Off gives plain faces with joints only."
+                              Checked="Output_Changed" Unchecked="Output_Changed" />
                     <CheckBox Name="CheckPattern" Content="Create Revit Model Fill Pattern" IsChecked="False" Margin="0,0,0,8" />
                     <CheckBox Name="CheckFillRegion" Content="Create Revit Filled Region Type" IsChecked="False" Margin="0,0,0,8" />
                     <CheckBox Name="CheckMaterial" Content="Create Revit Material" IsChecked="False" Margin="0,0,0,8" />
                 </StackPanel>
 
-                <!-- Material Colors -->
-                <Grid Grid.Column="1" Grid.Row="0" Margin="0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Name="BrickColorLabel"
-                            Grid.Column="0" Grid.Row="1"
-                            Text="Brick Face Colour:"
-                            Margin="5,0,5,8"
-                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                            FontWeight="Normal" />
-                    <Button Name="BrickColorSwatch"
-                            Grid.Column="1" Grid.Row="1"
-                            Width="60" Height="25" Margin="5,0,35,5"
-                            Click="SelectBrickColor_Click"
-                            BorderBrush="Black" BorderThickness="1" />
-                    <TextBlock Name="MortarColorLabel"
-                            Grid.Column="0" Grid.Row="2"
-                            Text="Mortar Joint Colour:"
-                            Margin="5,0,5,8"
-                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                            FontWeight="Normal" />
-                    <Button Name="MortarColorSwatch"
-                            Grid.Column="1" Grid.Row="2"
-                            Width="60" Height="25" Margin="5,0,35,8"
-                            Click="SelectMortarColor_Click"
-                            BorderBrush="Black" BorderThickness="1" />
-                </Grid>
+                <!-- Texture / colour thumbnail: click to open the texture editor -->
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Border BorderBrush="Black" BorderThickness="1" Width="170" Height="140" Background="#EEEEEE"
+                            Cursor="Hand" MouseLeftButtonDown="TexturePreview_Click"
+                            ToolTip="Click to edit the texture and the brick and mortar colours">
+                        <Grid>
+                            <Image Name="TexturePreview" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock Name="TexturePlaceholder" Text="Select a pattern" Foreground="#888888" FontWeight="Normal"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                    <TextBlock Text="Click to edit texture and colours" FontWeight="Normal" FontSize="11" Foreground="#555555"
+                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                </StackPanel>
             </Grid>
         </GroupBox>
 

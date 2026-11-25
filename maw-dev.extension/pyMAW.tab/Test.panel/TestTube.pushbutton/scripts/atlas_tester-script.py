@@ -28,7 +28,12 @@ from System.Drawing.Imaging import ImageFormat, PixelFormat
 import Microsoft.Win32
 
 # -------------------- Local Import --------------------
-lib_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+lib_dir = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "Tools.panel",
+    "Make Pattern.pulldown",
+    "lib",
+)
 if lib_dir not in sys.path:
     sys.path.append(lib_dir)
 
@@ -121,7 +126,7 @@ class AtlasTester(Window):
                 if rgb is None:
                     self.statusText.Text = "Colour must be hex like #A8553A"
                     return
-                base = texture_atlas.shade_preview(bmp, rgb, self.sliderBump.Value)
+                base = texture_atlas.render_colour_preview(plan, bmp, rgb, rgb, self.sliderBump.Value)
 
             shown = base
             if self.chkTile.IsChecked:
