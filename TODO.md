@@ -23,10 +23,22 @@ history at `9480d3e`):
   value, so `tempfile.gettempdir()` (evaluated inside the Revit process) is the
   right base, not a hard-coded `%TEMP%`.
 
+### Answered
+
+1. **The rendering asset property** is named `thumbnail`:
+   `AppearanceAssetElement.GetRenderingAsset().FindByName("thumbnail").Value`.
+   The value is unreliable:
+   - the property is sometimes missing;
+   - it sometimes starts with `tmp:` (relative to the Revit temp folder);
+   - it sometimes holds a full file path.
+
+   A `tmp:` value or full path may have been written on another PC or in another
+   session, so the file it names may not exist. Always check
+   `os.path.isfile` before using it. A working helper is in
+   `Test.panel/TestTube.pushbutton/scripts/export_material_thumbnails.py`.
+
 ### Not yet known (verify first)
 
-1. **The name of the rendering asset property** that holds the `tmp:?` string.
-   The note says "find by name (string)" but does not record the name.
 2. **Whether `PID_6d48` is the Revit process id in hex.** 0x6d48 = 27976. If so
    the folder can be cross-checked with `hex(os.getpid())`, since pyRevit runs
    inside the Revit process. Treat this as a sanity check only; the stored
