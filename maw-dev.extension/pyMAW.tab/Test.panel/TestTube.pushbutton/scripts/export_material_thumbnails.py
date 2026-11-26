@@ -6,7 +6,8 @@ named after the material (not the appearance asset). Materials sharing an
 appearance asset each get their own copy.
 
 The thumbnail value is read from the appearance asset's rendering asset property
-"thumbnail". It may be missing, a "tmp:?" path relative to the Revit temp folder,
+"thumbnail" and the scene from the "swatch" property (e.g. "Swatch-Sphere2"). The
+thumbnail may be missing, a "tmp:?" path relative to the Revit temp folder,
 or a full path, and can refer to a file from another session or PC that no longer
 exists. Those materials are skipped and listed in the report.
 """
@@ -23,19 +24,19 @@ logger = script.get_logger()
 output = script.get_output()
 
 THUMBNAIL_PROPERTY = "thumbnail"
+SWATCH_PROPERTY = "swatch"
 TEMP_PREFIX = "tmp:"
 INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]+')
 
 
-def get_thumbnail_value(doc, material):
-    """Return the raw thumbnail string of a material, or None if it has none."""
+def get_string_property(doc, material, property_name):
+    """Return a rendering asset string property of a material, or None."""
     asset_element = doc.GetElement(material.AppearanceAssetId)
     if not isinstance(asset_element, DB.AppearanceAssetElement):
         return None
     try:
         rendering_asset = asset_element.GetRenderingAsset()
-        thumbnail_property = rendering_asset.FindByName(THUMBNAIL_PROPERTY)
-        value = thumbnail_property.Value
+        value = rendering_asset.FindByName(property_name).Value
     except Exception:
         return None
     return value if value else None
@@ -67,18 +68,40 @@ def unique_destination(folder, name, extension, used_names):
 
 
 def collect_thumbnails(doc):
-    """Return (material name, source path) pairs and the names of those skipped."""
-    found = []
-    skipped = []
+    """Return a record per material, sorted by name.
+
+    Each record is (name, raw thumbnail value, resolved path or None, swatch).
+    """
+    records = []
     materials = DB.FilteredElementCollector(doc).OfClass(DB.Material)
     for material in sorted(materials, key=lambda m: m.Name.lower()):
-        raw_value = get_thumbnail_value(doc, material)
+        raw_value = get_string_property(doc, material, THUMBNAIL_PROPERTY)
         path = resolve_thumbnail_path(raw_value) if raw_value else None
-        if path:
-            found.append((material.Name, path))
+        swatch = get_string_property(doc, material, SWATCH_PROPERTY)
+        records.append((material.Name, raw_value, path, swatch))
+    return records
+
+
+def report_materials(records):
+    rows = []
+    for name, raw_value, path, swatch in records:
+        if not raw_value:
+            status = "no value"
+        elif path:
+            status = "found"
         else:
-            skipped.append(material.Name)
-    return found, skipped
+            status = "not found"
+        rows.append(
+            [
+                name,
+                swatch or "",
+                status,
+                raw_value.replace("\\", "/") if raw_value else "",
+            ]
+        )
+    output.print_table(
+        rows, columns=["Material", "Swatch", "Thumbnail file", "Thumbnail path"]
+    )
 
 
 def export_thumbnails(thumbnails, folder):
@@ -98,22 +121,25 @@ def export_thumbnails(thumbnails, folder):
 
 def main():
     doc = revit.doc
+    output.print_md(
+        "Revit PID: **{}** (hex `{}`). Temp folder: `{}`".format(
+            os.getpid(), hex(os.getpid()), tempfile.gettempdir()
+        )
+    )
+    records = collect_thumbnails(doc)
+    report_materials(records)
+
     folder = forms.pick_folder("Select folder for material thumbnails")
     if not folder:
         script.exit()
 
-    thumbnails, skipped = collect_thumbnails(doc)
+    thumbnails = [(name, path) for name, _, path, _ in records if path]
     exported = export_thumbnails(thumbnails, folder)
-
     output.print_md(
         "**{} thumbnails exported** to `{}`. {} materials had no usable thumbnail.".format(
-            exported, folder, len(skipped)
+            exported, folder, len(records) - len(thumbnails)
         )
     )
-    if skipped:
-        output.print_md("Skipped materials:")
-        for name in skipped:
-            print(name)
 
 
 if __name__ == "__main__":
