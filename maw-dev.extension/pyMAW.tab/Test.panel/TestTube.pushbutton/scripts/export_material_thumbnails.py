@@ -10,6 +10,10 @@ The thumbnail value is read from the appearance asset's rendering asset property
 thumbnail may be missing, a "tmp:?" path relative to the Revit temp folder,
 or a full path, and can refer to a file from another session or PC that no longer
 exists. Those materials are skipped and listed in the report.
+
+Before reporting, the swatch of every appearance asset whose name starts with
+"Glass" is set to "Swatch-CurtainWall", to test whether a scripted edit refreshes
+the cached thumbnail.
 """
 
 import os
@@ -25,6 +29,8 @@ output = script.get_output()
 
 THUMBNAIL_PROPERTY = "thumbnail"
 SWATCH_PROPERTY = "swatch"
+GLASS_PREFIX = "Glass"
+GLASS_SWATCH = "Swatch-CurtainWall"
 TEMP_PREFIX = "tmp:"
 INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]+')
 
@@ -65,6 +71,41 @@ def unique_destination(folder, name, extension, used_names):
         counter += 1
     used_names.add(candidate.lower())
     return os.path.join(folder, candidate + extension)
+
+
+def set_swatch(doc, asset_element, swatch):
+    """Set the swatch scene of an appearance asset.
+
+    Returns:
+        str: "updated", "unchanged" or a message describing why it failed.
+    """
+    try:
+        with DB.AppearanceAssetEditScope(doc) as edit_scope:
+            editable_asset = edit_scope.Start(asset_element.Id)
+            swatch_property = editable_asset.FindByName(SWATCH_PROPERTY)
+            if swatch_property is None:
+                return "no swatch property"
+            if swatch_property.Value == swatch:
+                return "unchanged"
+            swatch_property.Value = swatch
+            edit_scope.Commit(True)
+    except Exception:
+        return "failed: {}".format(traceback.format_exc())
+    return "updated"
+
+
+def set_glass_swatches(doc):
+    """Set the swatch of every appearance asset named "Glass*" and report it."""
+    assets = DB.FilteredElementCollector(doc).OfClass(DB.AppearanceAssetElement)
+    glass_assets = sorted(
+        (a for a in assets if a.Name.startswith(GLASS_PREFIX)),
+        key=lambda a: a.Name.lower(),
+    )
+    rows = [
+        [asset.Name, set_swatch(doc, asset, GLASS_SWATCH)] for asset in glass_assets
+    ]
+    output.print_md("**Glass swatch update** to `{}`".format(GLASS_SWATCH))
+    output.print_table(rows, columns=["Appearance asset", "Result"])
 
 
 def collect_thumbnails(doc):
@@ -126,6 +167,7 @@ def main():
             os.getpid(), hex(os.getpid()), tempfile.gettempdir()
         )
     )
+    set_glass_swatches(doc)
     records = collect_thumbnails(doc)
     report_materials(records)
 

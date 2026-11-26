@@ -37,16 +37,26 @@ history at `9480d3e`):
    `os.path.isfile` before using it. A working helper is in
    `Test.panel/TestTube.pushbutton/scripts/export_material_thumbnails.py`.
 
+2. **`PID_<hex>` is the Revit process id in hex.** Confirmed: PID 0xe538
+   matches the newest `MaterialThumbnails_PID_e538` folder. Thumbnails found
+   in other `PID_*` folders were written by earlier sessions, so the files
+   survive Revit closing (at least sometimes).
+3. **The scene is a string property named `swatch`**, with values such as
+   `Swatch-Sphere2`, `Swatch-Wall` and `Swatch-Branded`. The default glass
+   material has no value for it.
+4. **Thumbnail updates:**
+   - Editing a material in the Material Browser updates the swatch scene, the
+     `thumbnail` path stored in the asset, and the PNG in the temp folder.
+   - Changing only the scene sometimes updates the PNG but not the stored path.
+   - Walking all properties of the rendering asset does not list the thumbnail;
+     it is only reachable with `FindByName("thumbnail")`.
+
 ### Not yet known (verify first)
 
-2. **Whether `PID_6d48` is the Revit process id in hex.** 0x6d48 = 27976. If so
-   the folder can be cross-checked with `hex(os.getpid())`, since pyRevit runs
-   inside the Revit process. Treat this as a sanity check only; the stored
-   string already names the folder.
-3. **When Revit creates the file.** The file only exists after Revit has
-   rendered that thumbnail (e.g. the material was shown in the Material
-   Browser). Materials that were never displayed have no file.
-4. **Whether the value is the same for project materials and library
+5. **Whether a scripted edit** (`AppearanceAssetEditScope`) regenerates the PNG
+   or updates the `thumbnail` path. The thumbnail script now sets `swatch` on
+   `Glass*` assets to test this.
+6. **Whether the value is the same for project materials and library
    materials**, and for materials with the default "Generic" asset.
 
 ### Decisions made
@@ -129,9 +139,10 @@ def get_material_thumbnail_path(doc, material):
 
 ### Risks
 
-- The thumbnail files are in the Revit temp folder and are deleted when Revit
-  closes, so the export is only complete for thumbnails generated in this
-  session. This is accepted (blank when missing).
+- The thumbnail files are in the Revit temp folder, in per-session `PID_*`
+  folders. Older sessions' folders can still exist but are not guaranteed to
+  (the OS or Revit may clear them), and the path stored in a material may point
+  to a file that no longer exists. Blank when missing is accepted.
 - Embedding hundreds of PNGs can make the `.xlsx` large and slow to write. If
   this is a problem, downscale before embedding (needs an imaging library, which
   may not be available in IronPython; `System.Drawing` is the alternative).
