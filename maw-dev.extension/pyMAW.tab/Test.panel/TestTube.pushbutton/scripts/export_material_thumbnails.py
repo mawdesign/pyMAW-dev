@@ -22,6 +22,8 @@ import shutil
 import tempfile
 import traceback
 
+from Autodesk.Revit.DB import Visual
+
 from pyrevit import revit, DB, forms, script
 
 logger = script.get_logger()
@@ -80,7 +82,7 @@ def set_swatch(doc, asset_element, swatch):
         str: "updated", "unchanged" or a message describing why it failed.
     """
     try:
-        with DB.AppearanceAssetEditScope(doc) as edit_scope:
+        with Visual.AppearanceAssetEditScope(doc) as edit_scope:
             editable_asset = edit_scope.Start(asset_element.Id)
             swatch_property = editable_asset.FindByName(SWATCH_PROPERTY)
             if swatch_property is None:
